@@ -1,5 +1,5 @@
 from pathlib import Path
-from src.database.engine import Usuarios
+from .engine import Usuarios
 from sqlalchemy import create_engine, select, func
 from sqlalchemy.orm import Session
 

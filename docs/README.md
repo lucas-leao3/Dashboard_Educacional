@@ -37,19 +37,21 @@ dashboard-educacional/
 │   │   │   └── sync_service.py      # sync periódico com validação dupla
 │   │   ├── schemas/            # validação Pydantic
 │   │   └── main.py
+│   ├── Dockerfile              # imagem do backend (Python/uvicorn)
 │   └── tests/
 ├── frontend/
-│   └── src/
-│       ├── components/
-│       │   ├── ChartSocioeconomico.tsx
-│       │   ├── ChartDistribuicao.tsx
-│       │   └── ChartLongitudinal.tsx
-│       └── pages/
-│           └── Dashboard.tsx   # painel único
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── ChartSocioeconomico.tsx
+│   │   │   ├── ChartDistribuicao.tsx
+│   │   │   └── ChartLongitudinal.tsx
+│   │   └── pages/
+│   │       └── Dashboard.tsx   # painel único
+│   └── Dockerfile              # imagem do frontend (build Node + serve estático)
 ├── docs/
 │   ├── README.md
-│   └── DATABASE.md     # dicionário de dados do banco
-└── docker-compose.yml          # ambiente local
+│   └── dicionario_dados.md     # dicionário de dados do banco
+└── docker-compose.yml          # orquestra backend + frontend
 ```
 
 ## Fonte de dados

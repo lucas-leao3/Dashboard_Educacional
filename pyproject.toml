@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dashboard-educacional"
+version = "0.1.0"
+description = "Dashboard educacional com análise de dados acadêmicos e socioeconômicos"
+requires-python = ">=3.12"
+
+dependencies = [
+    "sqlalchemy>=2.0.30",
+    "pydantic>=2.12.5",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "httpx>=0.27.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["backend*"]
+exclude = ["legado*", "venv*", "*.egg-info*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
