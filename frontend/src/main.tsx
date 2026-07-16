@@ -21,8 +21,8 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/distribuicao" element={<EmConstrucao titulo="Distribuição" />} />
+        <Route path="/" element={<Dashboard tipo="bidimensional" />} />
+        <Route path="/distribuicao" element={<Dashboard tipo="distribuicao" />} />
         <Route path="/longitudinal"  element={<EmConstrucao titulo="Longitudinal" />} />
         <Route path="/ia-chat"       element={<EmConstrucao titulo="IA Chat" />} />
       </Routes>

@@ -1,6 +1,7 @@
 import Sidebar from '../components/Sidebar';
 import MetricCard from '../components/MetricCard';
 import ChartBidimensional from '../components/ChartBidimensional';
+import ChartDistribuicao from '../components/ChartDistribuicao';
 
 // Ícone de pessoas (Matrículas) de acordo com a foto
 const IconPeople = () => (
@@ -20,9 +21,13 @@ const IconTrending = () => (
   </svg>
 );
 
-const PAGE_TITLE = 'Visualização Bidimensional';
+interface DashboardProps {
+  tipo: 'bidimensional' | 'distribuicao';
+}
 
-export default function Dashboard() {
+export default function Dashboard({ tipo }: DashboardProps) {
+  const pageTitle = tipo === 'bidimensional' ? 'Visualização Bidimensional' : 'Visualização Distribuída';
+
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-slate-50 font-sans">
       {/* Sidebar Fixo à Esquerda */}
@@ -32,7 +37,7 @@ export default function Dashboard() {
       <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
         {/* Top Header Bar */}
         <header className="shrink-0 w-full bg-[#f8fafc] border-b border-slate-150 px-8 py-3.5 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-slate-400 tracking-wide">{PAGE_TITLE}</h2>
+          <h2 className="text-sm font-semibold text-slate-400 tracking-wide">{pageTitle}</h2>
         </header>
 
         {/* Área de Conteúdo com Gradiente Suave */}
@@ -58,9 +63,9 @@ export default function Dashboard() {
             />
           </div>
 
-          {/* Card do Gráfico Bidimensional */}
+          {/* Card do Gráfico Dinâmico */}
           <div className="flex-1 min-h-[450px]">
-            <ChartBidimensional />
+            {tipo === 'bidimensional' ? <ChartBidimensional /> : <ChartDistribuicao />}
           </div>
         </main>
       </div>
