@@ -27,56 +27,41 @@ interface DashboardProps {
 }
 
 export default function Dashboard({ tipo }: DashboardProps) {
-  let pageTitle = 'Visualização Bidimensional';
-  if (tipo === 'distribuicao') {
-    pageTitle = 'Visualização Distribuída';
-  } else if (tipo === 'longitudinal') {
-    pageTitle = 'Visualização Longitudinal';
-  }
-
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-slate-50 font-sans">
-      {/* Sidebar Fixo à Esquerda */}
+      {/* Sidebar Fixo à Esquerda - Ocupa a altura total da tela */}
       <Sidebar />
 
       {/* Conteúdo à Direita */}
-      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
-        {/* Top Header Bar */}
-        <header className="shrink-0 w-full bg-[#f8fafc] border-b border-slate-150 px-8 py-3.5 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-slate-400 tracking-wide">{pageTitle}</h2>
-        </header>
+      <main
+        className="flex-1 overflow-y-auto px-10 py-10 space-y-7 flex flex-col justify-start"
+        style={{
+          background: 'linear-gradient(135deg, #e0ebff 0%, #ebe7fe 40%, #f7f9ff 100%)',
+        }}
+      >
+        {/* Cards de Métricas alinhados à direita */}
+        <div className="flex justify-end gap-5">
+          <MetricCard
+            label="Matrículas Únicas"
+            value="56"
+            icon={<IconPeople />}
+            variant="light"
+          />
+          <MetricCard
+            label="CRG Médio"
+            value="8,850"
+            icon={<IconTrending />}
+            variant="dark"
+          />
+        </div>
 
-        {/* Área de Conteúdo com Gradiente Suave */}
-        <main
-          className="flex-1 overflow-y-auto px-10 py-8 space-y-7 flex flex-col justify-start"
-          style={{
-            background: 'linear-gradient(135deg, #e0ebff 0%, #ebe7fe 40%, #f7f9ff 100%)',
-          }}
-        >
-          {/* Cards de Métricas alinhados à direita */}
-          <div className="flex justify-end gap-5">
-            <MetricCard
-              label="Matrículas Únicas"
-              value="56"
-              icon={<IconPeople />}
-              variant="light"
-            />
-            <MetricCard
-              label="CRG Médio"
-              value="8,850"
-              icon={<IconTrending />}
-              variant="dark"
-            />
-          </div>
-
-          {/* Card do Gráfico Dinâmico */}
-          <div className="flex-1 min-h-[450px]">
-            {tipo === 'bidimensional' && <ChartBidimensional />}
-            {tipo === 'distribuicao' && <ChartDistribuicao />}
-            {tipo === 'longitudinal' && <ChartLongitudinal />}
-          </div>
-        </main>
-      </div>
+        {/* Card do Gráfico Dinâmico */}
+        <div className="flex-1 min-h-[450px]">
+          {tipo === 'bidimensional' && <ChartBidimensional />}
+          {tipo === 'distribuicao' && <ChartDistribuicao />}
+          {tipo === 'longitudinal' && <ChartLongitudinal />}
+        </div>
+      </main>
     </div>
   );
 }
