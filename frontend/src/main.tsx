@@ -23,7 +23,7 @@ createRoot(document.getElementById('root')!).render(
       <Routes>
         <Route path="/" element={<Dashboard tipo="bidimensional" />} />
         <Route path="/distribuicao" element={<Dashboard tipo="distribuicao" />} />
-        <Route path="/longitudinal"  element={<EmConstrucao titulo="Longitudinal" />} />
+        <Route path="/longitudinal"  element={<Dashboard tipo="longitudinal" />} />
         <Route path="/ia-chat"       element={<EmConstrucao titulo="IA Chat" />} />
       </Routes>
     </BrowserRouter>

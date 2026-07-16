@@ -2,6 +2,7 @@ import Sidebar from '../components/Sidebar';
 import MetricCard from '../components/MetricCard';
 import ChartBidimensional from '../components/ChartBidimensional';
 import ChartDistribuicao from '../components/ChartDistribuicao';
+import ChartLongitudinal from '../components/ChartLongitudinal';
 
 // Ícone de pessoas (Matrículas) de acordo com a foto
 const IconPeople = () => (
@@ -22,11 +23,16 @@ const IconTrending = () => (
 );
 
 interface DashboardProps {
-  tipo: 'bidimensional' | 'distribuicao';
+  tipo: 'bidimensional' | 'distribuicao' | 'longitudinal';
 }
 
 export default function Dashboard({ tipo }: DashboardProps) {
-  const pageTitle = tipo === 'bidimensional' ? 'Visualização Bidimensional' : 'Visualização Distribuída';
+  let pageTitle = 'Visualização Bidimensional';
+  if (tipo === 'distribuicao') {
+    pageTitle = 'Visualização Distribuída';
+  } else if (tipo === 'longitudinal') {
+    pageTitle = 'Visualização Longitudinal';
+  }
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-slate-50 font-sans">
@@ -65,7 +71,9 @@ export default function Dashboard({ tipo }: DashboardProps) {
 
           {/* Card do Gráfico Dinâmico */}
           <div className="flex-1 min-h-[450px]">
-            {tipo === 'bidimensional' ? <ChartBidimensional /> : <ChartDistribuicao />}
+            {tipo === 'bidimensional' && <ChartBidimensional />}
+            {tipo === 'distribuicao' && <ChartDistribuicao />}
+            {tipo === 'longitudinal' && <ChartLongitudinal />}
           </div>
         </main>
       </div>
