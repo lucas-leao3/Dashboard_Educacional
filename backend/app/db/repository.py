@@ -1,11 +1,7 @@
-from pathlib import Path
-from .engine import Usuarios
-from sqlalchemy import create_engine, select, func
+from .engine import Usuarios, engine
+from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 
-
-caminho_DB = Path(__file__).parent / 'BancoDeDados.sqlite'
-engine = create_engine(f'sqlite:///{caminho_DB}')
 
 def crg_medio():
     with Session(engine) as session:
@@ -29,7 +25,7 @@ def consulta_por_argumento(argumento, polo= 'todos'):
         polo = [polo]
     argumento = parametros_do_select(argumento)
     with Session(bind=engine) as session:
-        comando_sql = select(argumento)
+        comando_sql = select(argumento).where(Usuarios.polo.in_(polo))
         resposta = session.execute(comando_sql).all()
         return resposta
 
@@ -41,7 +37,7 @@ def consulta_longitudinal(argumento, polo='todos'):
             polo = [polo]
         argumento = parametros_do_select(argumento)
         with Session(bind=engine) as session:
-            comando_sql = select(argumento, Usuarios.matricula, Usuarios.periodo)
+            comando_sql = select(argumento, Usuarios.matricula, Usuarios.periodo).where(Usuarios.polo.in_(polo))
             resposta = session.execute(comando_sql).all()
             return resposta
     return Exception
@@ -72,12 +68,12 @@ def parametros_do_select(parametro):
             return Usuarios.tipo_deficiencia
         case 'renda':
             return Usuarios.renda
-        case 'descolamento':
-            return Usuarios.descolamento
+        case 'deslocamento':
+            return Usuarios.deslocamento
         case 'trabalho':
             return Usuarios.trabalho
-        case 'assistencia_estudante':
-            return Usuarios.assistencia_estudante
+        case 'assistencia_estudantil':
+            return Usuarios.assistencia_estudantil
         case 'saude_mental':
             return Usuarios.saude_mental
         case 'estresse':
