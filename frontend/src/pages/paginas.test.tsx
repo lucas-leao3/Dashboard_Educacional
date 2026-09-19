@@ -122,7 +122,7 @@ describe('tela Dados', () => {
   test('com API e um lote aberto sem ingestões, seleciona esse lote e mostra o passo 2', () => {
     const html = renderComContexto({ ...dados, origem: 'api', lotes: [loteAberto], lote: loteAberto }, '/dados');
     expect(html).toContain('type="file"');
-    expect(html).toContain('Cobertura do lote 2026-09-L01');
+    expect(html).not.toContain('Cobertura do lote 2026-09-L01');
   });
   test('lote com passos 1 e 2 mostra o botão Fechar lote', () => {
     const rodado = { ...loteAberto, ingestoes: [ingestao(1), ingestao(2)] };

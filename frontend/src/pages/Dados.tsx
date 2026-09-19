@@ -43,7 +43,10 @@ export default function Dados() {
     const r = await acao();
     setOcupado(false);
     if (r.ok) depois?.(r.dados);
-    else if (r.erro !== null) setErro(r.status === 502 || r.status === 503 ? `${r.erro} — os PDFs ficaram gravados; reenvie os mesmos arquivos para retomar.` : r.erro);
+    else if (r.erro !== null) {
+      setErro(r.status === 502 || r.status === 503 ? `${r.erro} — os PDFs ficaram gravados; reenvie os mesmos arquivos para retomar.` : r.erro);
+      if (r.status === 409) await recarregar();
+    }
   }
 
   const onAbrir = (d: NovoLote) => rodar(() => fluxo.abrir(d), (novo) => { setEscolhido(novo.id); setResultadoEnvio(null); });
@@ -68,7 +71,7 @@ export default function Dados() {
 
           <InserirLote lote={lote} lotes={lotes} ocupado={ocupado} erro={erro} resultadoEnvio={resultadoEnvio} onAbrir={onAbrir} onEnviar={onEnviar} onFechar={onFechar} />
 
-          {lote && <CoberturaLote lote={lote} linhas={linhas} erro={erroCobertura} />}
+          {lote && lote.ingestoes.length > 0 && <CoberturaLote lote={lote} linhas={linhas} erro={erroCobertura} />}
         </div>
       )}
     </AppShell>
