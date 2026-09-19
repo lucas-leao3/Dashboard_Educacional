@@ -9,6 +9,7 @@ import Polos from './Polos';
 import Turmas from './Turmas';
 import Alunos from './Alunos';
 import Perfil from './Perfil';
+import PaginaDados from './Dados';
 
 const alunos = consolidarAlunos(registrosDemonstracao);
 const dados: Dados = {
@@ -27,6 +28,7 @@ function renderComContexto(contexto: Dados, rota: string) {
           <Route path="/polo/:polo" element={<Turmas />} />
           <Route path="/polo/:polo/turma/:turma" element={<Alunos />} />
           <Route path="/aluno/:matricula" element={<Perfil />} />
+          <Route path="/dados" element={<PaginaDados />} />
         </Routes>
       </MemoryRouter>
     </Contexto.Provider>,
@@ -97,5 +99,40 @@ describe('selo do lote no AppShell', () => {
   test('não aparece em modo demonstração mesmo que um lote exista no contexto', () => {
     const html = renderComContexto({ ...dados, origem: 'demonstracao', lote }, '/');
     expect(html).not.toContain('Lote 2026-09-L01');
+  });
+});
+
+const loteAberto = {
+  id: '2026-09-L01', executado_em: '2026-09-12T10:00:00Z', fechado_em: null, periodos_cobertos: ['2026.1'],
+  executado_por: null, observacao: null, ingestoes: [], excecoes_por_motivo: {},
+};
+const ingestao = (passo: number) => ({ id: passo, passo, arquivo_sha256: null, executado_em: '2026-09-12T10:00:00Z', registros_lidos: 1, registros_aceitos: 1, registros_rejeitados: 0 });
+
+describe('tela Dados', () => {
+  test('sem API mostra o aviso e nenhum formulário', () => {
+    const html = render('/dados');
+    expect(html).toContain('A inserção de dados exige a API');
+    expect(html).not.toContain('type="file"');
+    expect(html).not.toContain('Abrir lote');
+  });
+  test('com API e nenhum lote começa no passo 1', () => {
+    const html = renderComContexto({ ...dados, origem: 'api', lotes: [] }, '/dados');
+    expect(html).toContain('Abrir lote');
+  });
+  test('com API e um lote aberto sem ingestões, seleciona esse lote e mostra o passo 2', () => {
+    const html = renderComContexto({ ...dados, origem: 'api', lotes: [loteAberto], lote: loteAberto }, '/dados');
+    expect(html).toContain('type="file"');
+    expect(html).toContain('Cobertura do lote 2026-09-L01');
+  });
+  test('lote com passos 1 e 2 mostra o botão Fechar lote', () => {
+    const rodado = { ...loteAberto, ingestoes: [ingestao(1), ingestao(2)] };
+    const html = renderComContexto({ ...dados, origem: 'api', lotes: [rodado], lote: rodado }, '/dados');
+    expect(html).toContain('Fechar lote');
+  });
+  test('lote fechado mostra "Fechado em" e não mostra ação', () => {
+    const fechado = { ...loteAberto, ingestoes: [ingestao(1), ingestao(2)], fechado_em: '2026-09-12T11:00:00Z' };
+    const html = renderComContexto({ ...dados, origem: 'api', lotes: [fechado], lote: fechado }, '/dados');
+    expect(html).toContain('Fechado em');
+    expect(html).not.toContain('Fechar lote');
   });
 });

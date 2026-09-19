@@ -1,9 +1,11 @@
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 
 interface NavItem {
   label: string;
   to: string;
   icon: React.ReactNode;
+  /** Prefixos de rota que também mantêm o item ativo (ex.: Polos ⊃ /polo, /aluno). */
+  prefixos?: string[];
 }
 
 // Ícones SVG idênticos aos da imagem de referência
@@ -51,16 +53,53 @@ const IconLogout = () => (
   </svg>
 );
 
-const navItems: NavItem[] = [
-  { label: 'Bidimensional', to: '/', icon: <IconGrid /> },
-  { label: 'Distribuição',  to: '/distribuicao', icon: <IconBarChart /> },
-  { label: 'Longitudinal',  to: '/longitudinal', icon: <IconTrendingUp /> },
-  { label: 'IA Chat',       to: '/ia-chat', icon: <IconSparkles /> },
+const IconMap = () => (
+  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>
+  </svg>
+);
+
+const IconUpload = () => (
+  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+  </svg>
+);
+
+interface Grupo { titulo: string; itens: NavItem[] }
+
+// Navegação principal segue Polo → Turma → Aluno → Perfil (doc de alinhamento, item 3).
+const grupos: Grupo[] = [
+  {
+    titulo: 'Navegação',
+    itens: [
+      { label: 'Polos', to: '/', icon: <IconMap />, prefixos: ['/polo/', '/aluno/'] },
+      { label: 'Dados', to: '/dados', icon: <IconUpload /> },
+    ],
+  },
+  {
+    titulo: 'Análises',
+    itens: [
+      { label: 'Bidimensional', to: '/analises/bidimensional', icon: <IconGrid /> },
+      { label: 'Distribuição',  to: '/analises/distribuicao', icon: <IconBarChart /> },
+      { label: 'Longitudinal',  to: '/analises/longitudinal', icon: <IconTrendingUp /> },
+      { label: 'IA Chat',       to: '/ia-chat', icon: <IconSparkles /> },
+    ],
+  },
 ];
 
-export default function Sidebar() {
+interface SidebarProps {
+  aberto?: boolean;
+  onFechar?: () => void;
+}
+
+export default function Sidebar({ aberto = false, onFechar }: SidebarProps) {
+  const { pathname } = useLocation();
+  const ativoPorPrefixo = (item: NavItem) => item.prefixos?.some((p) => pathname.startsWith(p)) ?? false;
   return (
-    <aside className="flex flex-col h-screen w-64 shrink-0 bg-white border-r border-slate-100 font-sans">
+    <aside
+      className={`fixed inset-y-0 left-0 z-30 flex flex-col h-screen w-64 shrink-0 bg-white border-r border-slate-100 font-sans transition-transform duration-200 md:static md:translate-x-0 ${aberto ? 'translate-x-0 shadow-2xl' : '-translate-x-full'}`}
+      aria-label="Menu principal"
+    >
       {/* Brand / Logo */}
       <div className="px-6 py-7">
         <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">PainelAcadêmico</h1>
@@ -68,23 +107,31 @@ export default function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 px-4 space-y-1.5">
-        {navItems.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            end={item.to === '/'}
-            className={({ isActive }) =>
-              `flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm font-semibold transition-all duration-200 cursor-pointer ${
-                isActive
-                  ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
-                  : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
-              }`
-            }
-          >
-            {item.icon}
-            <span>{item.label}</span>
-          </NavLink>
+      <nav className="flex-1 px-4 space-y-5 overflow-y-auto">
+        {grupos.map((grupo) => (
+          <div key={grupo.titulo}>
+            <p className="px-4 mb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">{grupo.titulo}</p>
+            <div className="space-y-1.5">
+              {grupo.itens.map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  end={item.to === '/'}
+                  onClick={onFechar}
+                  className={({ isActive }) =>
+                    `flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm font-semibold transition-all duration-200 cursor-pointer ${
+                      isActive || ativoPorPrefixo(item)
+                        ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
+                        : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
+                    }`
+                  }
+                >
+                  {item.icon}
+                  <span>{item.label}</span>
+                </NavLink>
+              ))}
+            </div>
+          </div>
         ))}
       </nav>
 
