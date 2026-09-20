@@ -57,15 +57,14 @@ Lote e período são eixos distintos e não se misturam:
 - **Período** (`2025.2`) é *a que semestre o dado se refere*. É atributo da linha.
 - **Lote** (`2026-09-L01`) é *quando a rodada foi executada e com quais insumos*. Um lote pode cobrir mais de um período — o inicial cobre dois; daí em diante, um por semestre.
 
-Um lote tem até três insumos, um por rota:
+Um lote tem dois insumos, um por rota:
 
 | Passo | Rota | Insumo | Em quais lotes |
 |---|---|---|---|
 | 1 | `/sincronizar` | resposta da API FasiTech | todos |
 | 2 | `/atualizar-crg` | PDFs do SIGAA | todos |
-| 3 | `/preencher-legado` | `DadosAgrupados.csv` | **só o L01** |
 
-O passo 3 existe para completar o que a planilha manual tinha e o FasiTech não. Lotes futuros têm dois passos.
+Não há mais um passo 3 de planilha legada: o L01 já nasce só com API + PDF (decisão tomada em `docs/superpowers/2026-09-12-primeiro-lote-design.md`). Campos que a planilha manual (`DadosAgrupados.csv`) preenchia e o FasiTech não traz ficam `NULL` — limitação declarada da fonte, não defeito do lote.
 
 ### 3.2. Onde colocar cada arquivo
 
@@ -75,10 +74,9 @@ Não classifique por assunto. Classifique por **regenerabilidade**, e dentro de 
 data/
 ├── raw/                          imutável, só acrescenta
 │   └── lotes/
-│       ├── 2026-09-L01/          lote inicial — cobre 2 períodos
+│       ├── 2026-09-L01/          lote inicial — cobre 2 períodos, sem legado
 │       │   ├── fasitech.json     resposta da API congelada, com envelope
 │       │   ├── historicos/       56 PDFs, emitidos em 10/12/2025
-│       │   ├── DadosAgrupados.csv   só neste lote
 │       │   ├── SHA256SUMS
 │       │   └── lote.md
 │       └── 2027-03-L02/          um por semestre daí em diante
@@ -89,7 +87,7 @@ data/
 ├── interim/                      dá pra regerar de raw/
 │   └── crg_semestre.csv          extraído dos PDFs: matricula, semestre, crg
 └── processed/                    dá pra regerar de raw/ + código
-    └── relatorios/
+    └── <lote>/                   vigente.csv + correspondencia.csv, por lote
 ```
 
 **Teste:** apague `interim/` e `processed/` inteiros. Se você conseguir regerar tudo a partir de `raw/` + código, está certo. Se não conseguir, aquele arquivo é `raw/` e está no lugar errado.
@@ -103,10 +101,9 @@ Aplicando ao que existe hoje — **os insumos atuais são o L01, montado retroat
 | Arquivo | Onde vai | Por quê |
 |---|---|---|
 | `historicos/*.pdf` | `raw/lotes/2026-09-L01/historicos/` | fonte original, não se regenera |
-| `DadosAgrupados.csv` | `raw/lotes/2026-09-L01/` | planilha manual, não se regenera |
-| `fasitech.json` | `raw/lotes/2026-09-L01/` | ainda não existe; nasce na primeira rodada de `/sincronizar` com congelamento |
+| `fasitech.json` | `raw/lotes/2026-09-L01/` | nasce na primeira rodada de `/sincronizar` com congelamento |
 | `crg_historico.csv` | aposentado → `interim/crg_semestre.csv` | extraído dos PDFs, agora por semestre |
-| `relatorio_correspondencia*.csv` | `processed/` | sai do banco — na verdade deveria ser um endpoint, não arquivo |
+| `DadosAgrupados.csv` e `relatorio_correspondencia*.csv` | **abandonados** — não entram no L01 | planilha manual e relatórios manuais de antes da API do FasiTech; sucedidos por `processed/<lote>/correspondencia.csv`, gerado por `scripts/lote.py fechar` |
 
 Isso aposenta o `ONDE_COLOCAR.txt`: a pergunta "onde colocar" passa a ter resposta automática.
 
@@ -115,7 +112,7 @@ Isso aposenta o `ONDE_COLOCAR.txt`: a pergunta "onde colocar" passa a ter respos
 Cada lote tem um `SHA256SUMS` com o hash de todos os seus arquivos:
 
 ```bash
-cd data/raw/lotes/2026-09-L01 && sha256sum historicos/*.pdf DadosAgrupados.csv fasitech.json > SHA256SUMS
+cd data/raw/lotes/2026-09-L01 && sha256sum historicos/*.pdf fasitech.json > SHA256SUMS
 sha256sum -c SHA256SUMS      # verifica
 ```
 
@@ -166,6 +163,8 @@ O que torna o dado sensível não é a matrícula em si — é a **ligação** e
 
 Regra prática: qualquer coisa que saia do ambiente controlado passa por uma função de mascaramento (ex.: `2020160400**`). Isso é um passo de exportação, não uma camada da arquitetura.
 
+**A API não tem autenticação — e os históricos entram por ela.** `POST /lotes/{id}/historicos` recebe os PDFs do SIGAA (nome, matrícula, notas) e grava em `raw/lotes/<id>/historicos/`. A fronteira de acesso hoje é a rede: o compose só publica a porta 8000 no `localhost` da máquina que roda o lote, e o banco nem isso. Enquanto for assim, "controlar quem abre o dashboard" e "controlar quem alcança a porta 8000" são a mesma coisa. Publicar a API fora do `localhost` (outra máquina, servidor da faculdade) exige autenticação antes — vira decisão registrada na seção 9, não ajuste de compose.
+
 ---
 
 ## 4. Modelo de dados
@@ -188,11 +187,12 @@ CREATE TABLE lote (
     executado_em      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     periodos_cobertos TEXT NOT NULL,         -- '2025.2;2026.1'
     executado_por     TEXT,
-    observacao        TEXT
+    observacao        TEXT,
+    fechado_em        TIMESTAMP              -- NULL = aberto
 );
 ```
 
-É o espelho de `raw/lotes/<id>/` no banco. `periodos_cobertos` é descritivo — o período de cada dado está na linha dele.
+É o espelho de `raw/lotes/<id>/` no banco. `periodos_cobertos` é descritivo — o período de cada dado está na linha dele. `fechado_em` é o estado do lote: `NULL` enquanto recebe insumo; preenchido por `POST /lotes/{id}/fechar`, que também escreve `SHA256SUMS` e `lote.md` (3.3). Fechado não se reabre e não recebe mais histórico — a interface lê daqui, não da existência de `lote.md` em disco.
 
 ### 4.2. `arquivo_fonte` — de onde veio
 
@@ -214,7 +214,7 @@ O `sha256` como chave primária é o que detecta duplicata: o mesmo PDF em dois 
 CREATE TABLE ingestao (
     id                   SERIAL PRIMARY KEY,
     lote_id              TEXT NOT NULL REFERENCES lote(id),
-    passo                SMALLINT NOT NULL,   -- 1 sincronizar | 2 atualizar-crg | 3 preencher-legado
+    passo                SMALLINT NOT NULL,   -- 1 sincronizar | 2 atualizar-crg
     arquivo_sha256       TEXT REFERENCES arquivo_fonte(sha256),
     executado_em         TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     registros_lidos      INTEGER NOT NULL,
@@ -361,17 +361,12 @@ cria raw/lotes/<id>/  ─────────────>  lote
     │     rejeitados ──────────────>  excecao
     │     fecha ingestao com contadores
     │
-    ├─ passo 2  /atualizar-crg
-    │     puxa PDFs do SIGAA → historicos/  ──>  arquivo_fonte (1 por PDF)
-    │     abre ingestao (passo 2)
-    │     extrai CRG por semestre ──>  crg_semestre (regra do zero aplicada)
-    │     nome, nascimento → usuarios (linha nova)
-    │     matrícula sem PDF ─────────>  excecao (sem_academico)
-    │     fecha ingestao
-    │
-    └─ passo 3  /preencher-legado          ← só no L01
-          abre ingestao (passo 3)
-          completa vazios → usuarios (linha nova)
+    └─ passo 2  /atualizar-crg
+          puxa PDFs do SIGAA → historicos/  ──>  arquivo_fonte (1 por PDF)
+          abre ingestao (passo 2)
+          extrai CRG por semestre ──>  crg_semestre (regra do zero aplicada)
+          nome, nascimento → usuarios (linha nova)
+          matrícula sem PDF ─────────>  excecao (sem_academico)
           fecha ingestao
     │
     ▼
@@ -387,9 +382,8 @@ aluno_vigente e crg_semestre já refletem o lote
 2. **Cria o lote.** Pasta `raw/lotes/<AAAA-MM>-L<nn>/` e linha em `lote` com os períodos cobertos.
 3. **Passo 1.** `/sincronizar` congela a resposta da API em `fasitech.json` **antes** de tocar o banco, registra o arquivo, abre a ingestão e insere uma linha nova por `(matricula, periodo)` — mesmo que já exista uma de lote anterior.
 4. **Passo 2.** Puxa os PDFs do SIGAA para `historicos/`. `/atualizar-crg` registra cada PDF, extrai o bloco de CRG por semestre, aplica a regra do zero e grava em `crg_semestre`. Matrícula do FasiTech sem PDF vira `excecao`.
-5. **Passo 3 (só L01).** `/preencher-legado` completa os campos que o FasiTech não trouxe.
-6. **Fecha o lote.** `SHA256SUMS`, `lote.md` com os contadores das rotas, commit no repositório privado.
-7. **Pronto.** `aluno_vigente` mostra os valores novos; o lote anterior continua intacto e comparável.
+5. **Fecha o lote.** `SHA256SUMS`, `lote.md` com os contadores das rotas, commit no repositório privado. Campos que o levantamento manual (`DadosAgrupados.csv`) preenchia e a API do FasiTech não traz ficam `NULL` — limitação declarada da fonte, não defeito do lote (ver `docs/operacao_lote.md`).
+6. **Pronto.** `aluno_vigente` mostra os valores novos; o lote anterior continua intacto e comparável.
 
 ### Os três casos
 
@@ -405,7 +399,9 @@ aluno_vigente e crg_semestre já refletem o lote
 |---|---|---|
 | `/sincronizar` | lê a API e grava direto; **pula** se `(matricula, periodo)` já existe — por isso correção nunca chega | congela `fasitech.json` primeiro; sempre insere snapshot novo com `ingestao_id`; a view decide o vigente |
 | `/atualizar-crg` | lê `crg_historico.csv` (1 CRG por matrícula) e grava o mesmo valor em **todas** as linhas do aluno | lê os PDFs do lote, extrai CRG **por semestre** para `crg_semestre`; `usuarios.CRG` vira derivado |
-| `/preencher-legado` | roda sempre, preenche vazios in place | marcado como passo exclusivo do L01; escreve linha nova, não altera |
+| `/preencher-legado` | roda sempre, preenche vazios in place | **removido.** O L01 passa a ser só API + PDF; manter a rota viva era convite pra rodar por engano num lote |
+| `POST /lotes/{id}/historicos` | não existia — PDFs copiados à mão para a pasta | **nova.** Recebe `.pdf` ou `.zip` e grava em `historicos/`; reenvio idempotente por conteúdo, nome repetido com conteúdo diferente é `409`, e recusa depois que o passo 2 leu a pasta ou o lote fechou. Com `?executar=true` roda os passos 1 e 2 em seguida (pulando o já feito) — o lote inteiro cabe no Swagger. `scripts/lote.py executar` faz o mesmo pelo terminal |
+| `POST /lotes/{id}/fechar` | era `scripts/lote.py fechar`, rodando no host | **nova.** A geração de `SHA256SUMS`, `lote.md` e dos CSVs derivados passa para a API, que também grava `lote.fechado_em`. Fechar continua uma chamada **separada** do upload, de propósito: entre os dois há a conferência dos contadores e das exceções, e fechado não se reabre. Uma interface futura vira um botão por transição (abrir → enviar+rodar → fechar) |
 
 A inversão em `/sincronizar` (inserir sempre, resolver na view) conserta o problema 2. A mudança em `/atualizar-crg` conserta o problema 4.
 
@@ -428,18 +424,18 @@ Por que junto: **o schema vai ser reescrito de qualquer jeito** (seção 4). Faz
 
 ## 7. Ordem de execução
 
-| # | Passo | Resolve | Código? |
-|---|---|---|---|
-| 1 | Montar o L01 retroativo: mover PDFs e `DadosAgrupados.csv` para `raw/lotes/2026-09-L01/`, gerar `SHA256SUMS` e `lote.md` | problema 1, onde colocar | não |
-| 2 | Colocar `raw/lotes/` em repositório privado separado, commit "L01" | problema 1 | não |
-| 3 | Criar `lote`, `arquivo_fonte`, `ingestao`, `excecao`; `usuarios` append-only + view | problemas 2 e 3 | sim |
-| 4 | Criar `crg_semestre`; reescrever a extração dos PDFs para semestre + regra do zero; `/atualizar-crg` passa a gravar nela | problema 4 | sim |
-| 5 | `/sincronizar` congela `fasitech.json` e insere sempre — o `fasitech.json` do L01 nasce aqui | problema 2 | sim |
-| 6 | Migrar para PostgreSQL (junto dos passos 3–5) | JSONB, acesso | sim |
-| 7 | Derivar turma e polo da matrícula | análise por turma e polo | sim |
-| 8 | Rótulos por regra documentada | perfis | sim |
+| # | Passo | Resolve | Código? | Status |
+|---|---|---|---|---|
+| 1 | Montar o L01 retroativo: mover PDFs para `raw/lotes/2026-09-L01/`, gerar `SHA256SUMS` e `lote.md` | problema 1, onde colocar | não | ver roteiro |
+| 2 | Colocar `raw/lotes/` em repositório privado separado, commit "L01" | problema 1 | não | ver roteiro |
+| 3 | Criar `lote`, `arquivo_fonte`, `ingestao`, `excecao`; `usuarios` append-only + view | problemas 2 e 3 | sim | **feito** |
+| 4 | Criar `crg_semestre`; reescrever a extração dos PDFs para semestre + regra do zero; `/atualizar-crg` passa a gravar nela | problema 4 | sim | **feito** |
+| 5 | `/sincronizar` congela `fasitech.json` e insere sempre — o `fasitech.json` do L01 nasce aqui | problema 2 | sim | **feito** |
+| 6 | Migrar para PostgreSQL e subir backend + banco com `docker compose` (junto dos passos 3–5) | JSONB, acesso | sim | **feito** |
+| 7 | Derivar turma e polo da matrícula | análise por turma e polo | sim | fora do escopo do L01 |
+| 8 | Rótulos por regra documentada | perfis | sim | fora do escopo do L01 |
 
-Os passos 1 e 2 encerram a perda de arquivo hoje, sem código. Os passos 3 a 5 precisam estar prontos **antes do L02** — a próxima rodada no fim do semestre é o prazo real.
+Os passos 3 a 6 estão prontos: `POST /lotes`, `/alunos/sincronizar`, `/alunos/atualizar-crg`, a view `aluno_vigente` e o compose com PostgreSQL. O que falta é **rodar** o L01 de ponta a ponta e ligar o dashboard à API — roteiro completo em `docs/operacao_lote.md`, com `scripts/lote.py` fazendo `abrir`/`rodar`/`fechar`.
 
 ---
 
@@ -459,5 +455,8 @@ O critério de cada rótulo é gravado como dado, versionado junto do registro q
 - **Como o período do FasiTech se traduz em semestre?** O eixo semestral vem do PDF. O socioeconômico entra com o período em que a coleta fechou — precisa ficar escrito no `lote.md` de cada lote qual semestre a coleta representa. O legado (`2024.(1 e 2)`, `2025.(3 e 4)`) fica com a onda como está; é dado do L01 e não se reinterpreta.
 - **Há aprovação de comitê de ética?** Determina o que pode ser publicado e se o mascaramento na exportação (seção 3.5) precisa ir além do que está proposto.
 - **Onde o repositório privado vai ficar?** GitHub, GitLab da instituição, ou outro. Depende da política da UFPA para dado de pesquisa com sujeitos humanos.
+- **A API vai sair do `localhost`?** Hoje não tem autenticação e recebe PDF com dado pessoal (3.5). Se um dia rodar em servidor compartilhado, autenticação vem antes da publicação.
 
-**Decidido nesta revisão:** lote como unidade de governança, com `ingestao` por passo e sem período fixo (3.1, 4.3) · `SHA256SUMS` por lote em vez de renomear arquivo (3.3) · resposta do FasiTech congelada em arquivo antes de gravar (3.2, 5) · CRG por semestre em tabela própria, com regra do zero (4.6) · passo 3 exclusivo do L01 (3.1) · matrícula visível no dashboard, sem pseudonimização interna (3.5) · repositório privado separado, sem cifrar por ora (3.4) · turma e polo derivados da matrícula (4.8).
+**Decidido em 18/09/2026:** históricos entram pela API (`POST /lotes/{id}/historicos`), não por cópia manual · fechamento vira endpoint com `fechado_em` no banco · fechar **não** é automático depois do upload — a conferência humana entre rodar e selar fica como ponto de revisão (5).
+
+**Decidido nesta revisão:** lote como unidade de governança, com `ingestao` por passo e sem período fixo (3.1, 4.3) · `SHA256SUMS` por lote em vez de renomear arquivo (3.3) · resposta do FasiTech congelada em arquivo antes de gravar (3.2, 5) · CRG por semestre em tabela própria, com regra do zero (4.6) · passo 3 (legado) planejado como exclusivo do L01 e depois **abandonado** antes do L01 rodar — API + PDF bastam (3.1; decisão revista em `docs/superpowers/2026-09-12-primeiro-lote-design.md`) · matrícula visível no dashboard, sem pseudonimização interna (3.5) · repositório privado separado, sem cifrar por ora (3.4) · turma e polo derivados da matrícula (4.8).

@@ -7,3 +7,20 @@
 body {
   font-family: var(--font-sans);
 }
+
+/* Preenchimento hachurado: "sem dado" (não coletado), distinto de um valor. */
+.hachurado {
+  background-color: #e2e8f0;
+  background-image: repeating-linear-gradient(
+    135deg,
+    #94a3b8 0 3px,
+    transparent 3px 7px
+  );
+}
+
+/* Estado "sem dado" também legível em modo de cores forçadas. */
+@media (forced-colors: active) {
+  .hachurado {
+    background-image: repeating-linear-gradient(135deg, CanvasText 0 3px, transparent 3px 7px);
+  }
+}

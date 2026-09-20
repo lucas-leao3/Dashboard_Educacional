@@ -1,0 +1,10 @@
+.venv
+.git
+frontend
+legado
+data
+docs
+tests
+**/__pycache__
+**/*.sqlite
+backend/app/data

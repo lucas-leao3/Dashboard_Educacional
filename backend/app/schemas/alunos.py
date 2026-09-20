@@ -51,3 +51,4 @@ class AlunoOut(AlunoCreate):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    ingestao_id: int

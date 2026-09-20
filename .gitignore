@@ -73,6 +73,9 @@ venv.bak/
 .env.development
 .env.production
 *.env
+# Templates/config versionados do zero, não segredo de verdade
+!backend/.env.example
+!frontend/.env.development
 
 # Streamlit secrets
 .streamlit/secrets.toml
@@ -183,7 +186,8 @@ tmp/
 
 # Docker
 docker-compose.override.yml
-.dockerignore
+# .dockerignore da raiz é versionado (context: . no docker-compose.yml)
+!.dockerignore
 
 # Local development
 local/

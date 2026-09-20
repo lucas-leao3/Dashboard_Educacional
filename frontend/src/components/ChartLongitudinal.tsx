@@ -7,6 +7,9 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts';
+import { useState } from 'react';
+import SelectDropdown from './ui/SelectDropdown';
+import BotaoIA from './ui/BotaoIA';
 import {
   mockDataLongitudinal,
   yAxisOptions,
@@ -16,70 +19,21 @@ import {
   poloOptions,
 } from '../data/mockData';
 
-// Chevron para dropdowns
-const IconChevron = () => (
-  <svg className="w-4 h-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="6 9 12 15 18 9"/>
-  </svg>
-);
-
-// Ícone de ondas de áudio/voz para o botão de chat flutuante
-const IconAudioWave = () => (
-  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-    <line x1="12" y1="5" x2="12" y2="19"/>
-    <line x1="8" y1="9" x2="8" y2="15"/>
-    <line x1="16" y1="9" x2="16" y2="15"/>
-    <line x1="4" y1="11" x2="4" y2="13"/>
-    <line x1="20" y1="11" x2="20" y2="13"/>
-  </svg>
-);
-
-interface SelectDropdownProps {
-  label: string;
-  options: string[];
-  defaultValue: string;
-  noValuePrefix?: boolean;
-}
-
-function SelectDropdown({ label, options, defaultValue, noValuePrefix = false }: SelectDropdownProps) {
-  return (
-    <div className="relative inline-block">
-      <select
-        defaultValue={defaultValue}
-        className="appearance-none bg-slate-50 border border-slate-100/80 text-slate-600 text-xs font-semibold rounded-full pl-4 pr-10 py-2 cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-400/40 transition-all hover:bg-slate-100"
-      >
-        {noValuePrefix ? (
-          <option value={defaultValue}>{label}</option>
-        ) : (
-          options.map((opt) => (
-            <option key={opt} value={opt}>
-              {label} : {opt}
-            </option>
-          ))
-        )}
-        {noValuePrefix && options.filter(opt => opt !== defaultValue).map((opt) => (
-          <option key={opt} value={opt}>
-            {opt}
-          </option>
-        ))}
-      </select>
-      <span className="absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none">
-        <IconChevron />
-      </span>
-    </div>
-  );
-}
-
 export default function ChartLongitudinal() {
+  const [eixoY, setEixoY] = useState('CRG');
+  const [eixoX, setEixoX] = useState('2024-2027');
+  const [turma, setTurma] = useState('2024.4');
+  const [aluno, setAluno] = useState('Todos');
+  const [polo, setPolo] = useState('Todos');
   return (
     <div className="relative bg-white rounded-[2rem] shadow-[0_12px_40px_rgba(0,0,0,0.03)] border border-slate-100 p-8 w-full">
       {/* Container de filtros / Dropdowns (5 Dropdowns) */}
       <div className="flex justify-end gap-3 mb-8 flex-wrap">
-        <SelectDropdown label="Y" options={yAxisOptions} defaultValue="CRG" />
-        <SelectDropdown label="X" options={xLongitudinalOptions} defaultValue="2024-2027" />
-        <SelectDropdown label="Turma" options={turmaOptions} defaultValue="2024" />
-        <SelectDropdown label="Aluno" options={alunoOptions} defaultValue="Todos" noValuePrefix={true} />
-        <SelectDropdown label="Polo" options={poloOptions} defaultValue="Todos" noValuePrefix={true} />
+        <SelectDropdown label="Y" options={yAxisOptions} value={eixoY} onChange={setEixoY} />
+        <SelectDropdown label="X" options={xLongitudinalOptions} value={eixoX} onChange={setEixoX} />
+        <SelectDropdown label="Turma" options={turmaOptions} value={turma} onChange={setTurma} />
+        <SelectDropdown label="Aluno" options={alunoOptions} value={aluno} onChange={setAluno} />
+        <SelectDropdown label="Polo" options={poloOptions} value={polo} onChange={setPolo} />
       </div>
 
       {/* Área do Gráfico de Linhas */}
@@ -177,17 +131,7 @@ export default function ChartLongitudinal() {
         </ResponsiveContainer>
       </div>
 
-      {/* Botão flutuante de IA Chat no canto inferior direito */}
-      <button
-        title="Abrir IA Chat"
-        className="absolute -bottom-6 -right-2 w-14 h-14 rounded-full flex items-center justify-center shadow-lg hover:shadow-xl hover:scale-110 active:scale-95 transition-all duration-200 cursor-pointer"
-        style={{
-          background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
-          boxShadow: '0 8px 30px rgba(37, 99, 235, 0.35)',
-        }}
-      >
-        <IconAudioWave />
-      </button>
+      <BotaoIA />
     </div>
   );
 }

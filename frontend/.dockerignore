@@ -1,0 +1,28 @@
+# Contexto de build do frontend (./frontend)
+
+.git
+.gitignore
+.dockerignore
+Dockerfile
+
+# Reinstalado via npm ci dentro da imagem
+node_modules/
+
+# Build local não entra no contexto — o bundle é gerado no stage de build
+dist/
+dist-ssr/
+
+# Ambiente e segredos
+.env
+.env.*
+*.env
+
+# Editores / SO
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*.log
+
+# Maquetes e documento de alinhamento: não entram na imagem
+references/
