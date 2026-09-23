@@ -30,10 +30,17 @@ describe('consolidarAlunos', () => {
     expect(a10.vigente.CRG).toBe(8);
     expect(a10.registros.map((r) => r.periodo)).toEqual(['2024.(1 e 2)', '2025.(3 e 4)']);
   });
-  test('turma vem do primeiro ano letivo; sem ele usa o rótulo padrão', () => {
+  test('matrícula fora do padrão: turma cai no rótulo legado (só o ano) ou no padrão', () => {
     const alunos = consolidarAlunos(base);
-    expect(alunos.find((a) => a.matricula === 10)!.turma).toBe('2024.4');
+    expect(alunos.find((a) => a.matricula === 10)!.turma).toBe('2024');
     expect(alunos.find((a) => a.matricula === 20)!.turma).toBe(SEM_TURMA);
+  });
+  test('matrícula de 12 dígitos manda em turma e polo, acima do que a fonte informou', () => {
+    const [aluno] = consolidarAlunos([
+      registro({ id: 9, matricula: 202016040011, polo: 'Oeiras', primeiro_ano_eletivo: '2024.4' }),
+    ]);
+    expect(aluno.turma).toBe('2020');
+    expect(aluno.polo).toBe('Cametá');
   });
   test('sinalização e fatores são derivados do vigente', () => {
     const a20 = consolidarAlunos(base).find((a) => a.matricula === 20)!;
@@ -93,7 +100,7 @@ describe('agregarPorTurma', () => {
   ];
   test('só turmas do polo, com contagem de alunos e CRG médio', () => {
     const turmas = agregarPorTurma(consolidarAlunos(base), 'Cameta');
-    expect(turmas.map((t) => t.turma)).toEqual(['2024.4', '2025.4']);
+    expect(turmas.map((t) => t.turma)).toEqual(['2024', '2025']);
     expect(turmas[0].alunos).toBe(2);
     expect(turmas[0].indicadores.crg_medio).toBe(6);
     expect(turmas[1].indicadores.crg_medio).toBeNull();
@@ -111,12 +118,26 @@ describe('trajetoriaPorDimensao', () => {
     registro({ id: 2, matricula: 1, periodo: '2024.(3 e 4)', CRG: 7, saude_mental: 'Regular', estresse: 'Não' }),
     registro({ id: 3, matricula: 1, periodo: '2025.(3 e 4)', CRG: null, saude_mental: 'Boa', estresse: 'Não' }),
   ]);
-  test('acadêmica é a série de CRG por período (null preservado)', () => {
-    expect(trajetoriaPorDimensao(aluno, 'academica')).toEqual([
-      { periodo: '2024.(1 e 2)', valor: 5 }, { periodo: '2024.(3 e 4)', valor: 7 }, { periodo: '2025.(3 e 4)', valor: null },
+  test('acadêmica sai dos semestres letivos, em ordem, com o não apurado preservado', () => {
+    const semestres = [
+      { matricula: 1, semestre: '2024.2', crg: 7 },
+      { matricula: 1, semestre: '2024.1', crg: 5 },
+      { matricula: 1, semestre: '2025.1', crg: null },
+      { matricula: 99, semestre: '2024.1', crg: 9 },   // outro aluno, não entra
+    ];
+    expect(trajetoriaPorDimensao(aluno, 'academica', semestres)).toEqual([
+      { rotulo: '2024.1', valor: 5 }, { rotulo: '2024.2', valor: 7 }, { rotulo: '2025.1', valor: null },
     ]);
+  });
+  test('acadêmica NÃO usa o CRG dos registros: ele é o mesmo em todo período', () => {
+    // O passo 2 do lote grava o último CRG apurado em todas as linhas do
+    // aluno. Usá-lo daria uma reta horizontal -- era o defeito.
+    expect(trajetoriaPorDimensao(aluno, 'academica')).toEqual([]);
   });
   test('saúde mental é o índice da dimensão por período', () => {
     expect(trajetoriaPorDimensao(aluno, 'saude_mental').map((p) => p.valor)).toEqual([2, 1, 0]);
+    expect(trajetoriaPorDimensao(aluno, 'saude_mental').map((p) => p.rotulo)).toEqual([
+      '2024.(1 e 2)', '2024.(3 e 4)', '2025.(3 e 4)',
+    ]);
   });
 });

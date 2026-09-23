@@ -3,19 +3,22 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.api.alunos import router as alunos_router
+from app.api.crg import router as crg_router
 from app.api.lotes import router as lotes_router
-from app.db.engine import criar_schema, engine
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    criar_schema(engine)
+    # O schema NÃO é criado aqui. Quem o cria e o evolui é o Alembic,
+    # rodado antes do uvicorn pelo command do docker-compose
+    # (`alembic upgrade head`). Ver docs/migracoes.md.
     yield
 
 
 app = FastAPI(title="Dashboard Educacional API", lifespan=lifespan)
 
 app.include_router(alunos_router)
+app.include_router(crg_router)
 app.include_router(lotes_router)
 
 

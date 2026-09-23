@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import type { Aluno } from '../domain/agregacao';
+import IdentificacaoAluno from './ui/IdentificacaoAluno';
 import BarrasDimensao from './BarrasDimensao';
 import SinalizacaoBadge from './ui/SinalizacaoBadge';
 
@@ -24,15 +25,17 @@ export default function CardAluno({ aluno, corPolo }: Props) {
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="font-bold text-slate-900 truncate group-hover:text-blue-700">
-            {vigente.nome ?? `Matrícula ${aluno.matricula}`}
-          </p>
+          <IdentificacaoAluno nome={vigente.nome} matricula={aluno.matricula} />
           <p className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-1.5 flex-wrap">
             <span className="inline-flex items-center gap-1 rounded-full px-2 py-px font-semibold text-white" style={{ background: corPolo }}>
               {aluno.polo}
             </span>
+            <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-px font-semibold text-slate-600">
+              Turma {aluno.turma}
+            </span>
+            {/* Sem separador "·" solto: a linha quebra em telas estreitas e o
+                ponto ficava órfão no fim. O gap do flex já separa. */}
             <span>{crg}</span>
-            <span aria-hidden="true">·</span>
             <span>{aluno.registros.length} período(s)</span>
           </p>
         </div>

@@ -8,6 +8,7 @@ import KpiCard from '../components/ui/KpiCard';
 import SelectDropdown from '../components/ui/SelectDropdown';
 import SinalizacaoBadge from '../components/ui/SinalizacaoBadge';
 import type { DimensaoId } from '../data/tipos';
+import { SEM_NOME, nomeExibido } from '../domain/aluno';
 import { pontuarDimensao } from '../domain/classificacao';
 import { DIMENSOES } from '../domain/dimensoes';
 import { useDados } from '../hooks/useDados';
@@ -20,7 +21,7 @@ import { COR_SINALIZACAO } from '../theme/cores';
  */
 export default function Perfil() {
   const { matricula = '' } = useParams();
-  const { alunos, alunosTodos, periodo } = useDados();
+  const { alunos, alunosTodos, periodo, crgSemestres } = useDados();
   const [dimensaoId, setDimensaoId] = useState<DimensaoId>('academica');
 
   // Com filtro de período, o vigente é o registro daquele período; se o aluno
@@ -43,7 +44,9 @@ export default function Perfil() {
 
   return (
     <AppShell
-      titulo={vigente.nome ?? `Matrícula ${aluno.matricula}`}
+      /* O <h1> do AppShell trunca: o nome fica nele (pode cortar sem perda) e a
+         matrícula abre o subtítulo, onde há largura e ela nunca some. */
+      titulo={nomeExibido(vigente.nome) ?? SEM_NOME}
       subtitulo={`Matrícula ${aluno.matricula} · ${aluno.polo} · ${rotuloTurma} · registro vigente: ${vigente.periodo}`}
       migalhas={[
         { rotulo: 'Polos', to: '/' },
@@ -114,7 +117,7 @@ export default function Perfil() {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 id="titulo-trajetoria" className="text-lg font-bold text-slate-900">Trajetória longitudinal</h2>
-            <p className="text-xs text-slate-500 mt-0.5">Evolução por período usando o histórico do aluno · {textoVariacao(aluno, dimensaoId)}.</p>
+            <p className="text-xs text-slate-500 mt-0.5">Evolução por período usando o histórico do aluno · {textoVariacao(aluno, dimensaoId, crgSemestres)}.</p>
           </div>
           <SelectDropdown label="Dimensão" value={dimensaoId} onChange={setDimensaoId} options={DIMENSOES.map((d) => ({ value: d.id, label: d.rotulo }))} />
         </div>

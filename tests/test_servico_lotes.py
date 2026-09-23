@@ -1,19 +1,18 @@
-from sqlalchemy import create_engine, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 from fastapi import HTTPException
 import pytest
 
 from app.core import config
-from app.db.engine import ArquivoFonte, Excecao, Ingestao, Lote, criar_schema
+from app.db.engine import ArquivoFonte, Excecao, Ingestao, Lote
 from app.services import lotes
 
 
 @pytest.fixture()
-def sessao(tmp_path, monkeypatch):
+def sessao(tmp_path, monkeypatch, db_engine):
+    """Sessão num PostgreSQL descartável e migrado (fixture `db_engine`)."""
     monkeypatch.setattr(config, "RAIZ_LOTES", tmp_path / "lotes")
-    engine = create_engine(f"sqlite:///{tmp_path / 't.sqlite'}")
-    criar_schema(engine)
-    with Session(engine) as s:
+    with Session(db_engine) as s:
         s.add(Lote(id="L01", periodos_cobertos="2026.1"))
         s.commit()
         yield s

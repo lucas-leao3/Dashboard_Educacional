@@ -1,5 +1,5 @@
-import { registrosDemonstracao } from './mockData';
-import type { Correspondencia, HistoricosOut, Lote, Registro } from './tipos';
+import { crgSemestresDemonstracao, registrosDemonstracao } from './mockData';
+import type { Correspondencia, CrgSemestre, HistoricosOut, Lote, Registro } from './tipos';
 
 export type Origem = 'api' | 'demonstracao';
 
@@ -30,6 +30,24 @@ export async function carregarRegistros(opcoes: Opcoes = {}): Promise<ResultadoC
     return { registros, origem: 'api' };
   } catch {
     return { registros: registrosDemonstracao, origem: 'demonstracao' };
+  }
+}
+
+/**
+ * Busca GET {baseUrl}/crg-semestres (a trajetória acadêmica por semestre).
+ * Mesma política de `carregarRegistros`: sem API ou em erro, cai na
+ * demonstração -- senão os gráficos de evolução ficariam vazios sem aviso.
+ */
+export async function carregarCrgSemestres(opcoes: Opcoes = {}): Promise<CrgSemestre[]> {
+  const baseUrl = (opcoes.baseUrl ?? import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '');
+  const fetchFn = opcoes.fetchFn ?? fetch;
+  if (!baseUrl) return crgSemestresDemonstracao;
+  try {
+    const resposta = await fetchFn(`${baseUrl}/crg-semestres`, { headers: { Accept: 'application/json' } });
+    if (!resposta.ok) throw new Error(`HTTP ${resposta.status}`);
+    return (await resposta.json()) as CrgSemestre[];
+  } catch {
+    return crgSemestresDemonstracao;
   }
 }
 

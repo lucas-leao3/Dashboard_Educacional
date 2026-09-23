@@ -17,7 +17,7 @@ As três visualizações ficam num painel único.
 - **Backend:** FastAPI
 - **ORM:** SQLAlchemy
 - **Frontend:** React
-- **Persistência:** SQLite
+- **Persistência:** PostgreSQL 17
 - **Estrutura de repositório:** Monorepo
 
 ## Arquitetura
@@ -31,7 +31,7 @@ dashboard-educacional/
 │   │   │   ├── config.py       # variáveis de ambiente (.env)
 │   │   │   ├── scheduler.py    # APScheduler — sync com FasiTech
 │   │   │   └── rate_limit.py   # slowapi — rate limiting
-│   │   ├── db/                 # models SQLAlchemy (SQLite)
+│   │   ├── db/                 # models SQLAlchemy (PostgreSQL)
 │   │   ├── services/
 │   │   │   ├── fasitech_client.py   # consome API FasiTech (token)
 │   │   │   └── sync_service.py      # sync periódico com validação dupla
@@ -69,7 +69,7 @@ Consultados via **API do FasiTech**, autenticada por token de acesso (armazenado
 
 > ⚠️ **Pendente de decisão.** A forma de entrada dos dados acadêmicos (nota/CRG do aluno) ainda não foi definida.
 >
-> **Sugestão em avaliação** (não implementada, ainda a ser validada pela equipe): reaproveitar o modelo do projeto desenvolvido com o professor Elton — uma aplicação em Streamlit que recebe múltiplos arquivos PDF de registros acadêmicos e converte para JSON. Para este projeto, a proposta seria adaptar esse fluxo para gravar os dados diretamente no banco (SQLite), respeitando a mesma validação dupla por matrícula + período usada nos dados socioeconômicos.
+> **Sugestão em avaliação** (não implementada, ainda a ser validada pela equipe): reaproveitar o modelo do projeto desenvolvido com o professor Elton — uma aplicação em Streamlit que recebe múltiplos arquivos PDF de registros acadêmicos e converte para JSON. Para este projeto, a proposta seria adaptar esse fluxo para gravar os dados diretamente no banco, respeitando a mesma validação dupla por matrícula + período usada nos dados socioeconômicos.
 >
 > Outras alternativas possíveis a serem avaliadas: upload manual de planilha (xlsx/csv), integração com API do sistema acadêmico da instituição, ou formulário manual via frontend.
 
@@ -88,7 +88,7 @@ O frontend (React) e o backend (FastAPI) rodam em origens diferentes, então o C
 
 ## Escalabilidade
 
-- **Banco de dados:** o projeto inicia com SQLite. Caso o volume de requisições/dados cresça de forma frequente (múltiplas instituições, muitos alunos, acesso concorrente), a migração para **PostgreSQL** é recomendada — a troca é facilitada pelo uso do SQLAlchemy como ORM.
+- **Banco de dados:** o projeto começou em SQLite e **já migrou para PostgreSQL 17**, que hoje é o único banco — em produção, em desenvolvimento e na suíte de testes. A migração foi antecipada por dois motivos que apareceram antes do volume: dado pessoal sensível pede controle de acesso (roles, RLS), e o SQLite aceitava calado um schema que o PostgreSQL recusa, escondendo defeito até a produção. Ver `docs/governanca_dados.md` e `docs/migracoes.md`.
 
 ## Testes (sugestão, não prioritário)
 

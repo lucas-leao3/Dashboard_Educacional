@@ -28,7 +28,7 @@ export default function Turmas() {
   return (
     <AppShell
       titulo={`Turmas do polo ${nomePolo}`}
-      subtitulo="Turma = ano/semestre de ingresso (primeiro ano letivo). Selecione uma turma para ver apenas os alunos pertencentes a ela."
+      subtitulo="Turma = ano de ingresso, os 4 primeiros dígitos da matrícula. Selecione uma turma para ver apenas os alunos pertencentes a ela."
       migalhas={[{ rotulo: 'Polos', to: '/' }, { rotulo: nomePolo }]}
     >
       {!doPolo.length ? (

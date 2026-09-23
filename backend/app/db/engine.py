@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import Iterator
 
-from sqlalchemy import BigInteger, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, create_engine, inspect, text
+from sqlalchemy import BigInteger, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, create_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, Session, sessionmaker
 
 from app.core.config import DATABASE_URL
@@ -84,6 +84,18 @@ class CrgSemestre(Base):
     crg: Mapped[float | None] = mapped_column(Float)
 
 
+class Polo(Base):
+    """Código do polo (dígitos 5-8 da matrícula) -> nome (governança §4.8).
+
+    Tabela, e não dicionário no código, porque a view `aluno_vigente` resolve
+    o nome por LEFT JOIN: quem consulta o banco por SQL enxerga o mesmo polo
+    que o dashboard, sem repetir o mapa. Polo novo é INSERT, não deploy."""
+    __tablename__ = "polo"
+
+    codigo: Mapped[str] = mapped_column(String(4), primary_key=True)   # '1604'
+    nome: Mapped[str] = mapped_column(String(50))                      # 'Cametá'
+
+
 class Usuarios(Base):
     __tablename__ = 'usuarios'
 
@@ -95,27 +107,32 @@ class Usuarios(Base):
     primeiro_ano_eletivo: Mapped[str | None] = mapped_column(String(10))
     CRG: Mapped[float | None] = mapped_column(Float)
     periodo: Mapped[str] = mapped_column(String(15))
-    genero: Mapped[str | None] = mapped_column(String(20))
+    # Respostas de questionário: 150 para todas. O vocabulário é do
+    # instrumento de pesquisa, não do banco, e muda entre ondas -- larguras
+    # apertadas aqui não validam nada, só derrubam a ingestão com 500 quando
+    # aparece uma opção legítima mais longa (foi o caso de 'Prefiro não
+    # responder', 21 caracteres, em pcd e tipo_moradia no lote 2026-09-L01).
+    genero: Mapped[str | None] = mapped_column(String(150))
     polo: Mapped[str | None] = mapped_column(String(15))
-    cor_etnia: Mapped[str | None] = mapped_column(String(10))
-    pcd: Mapped[str | None] = mapped_column(String(5))
-    tipo_deficiencia: Mapped[str | None] = mapped_column(String(100))
+    cor_etnia: Mapped[str | None] = mapped_column(String(150))
+    pcd: Mapped[str | None] = mapped_column(String(150))
+    tipo_deficiencia: Mapped[str | None] = mapped_column(String(150))
     renda: Mapped[str | None] = mapped_column(String(150))
     deslocamento: Mapped[str | None] = mapped_column(String(150))
     trabalho: Mapped[str | None] = mapped_column(String(150))
-    assistencia_estudantil: Mapped[str | None] = mapped_column(String(5))
-    saude_mental: Mapped[str | None] = mapped_column(String(10))
-    estresse: Mapped[str | None] = mapped_column(String(50))
-    acompanhamento: Mapped[str | None] = mapped_column(String(20))
-    escolaridade_pai: Mapped[str | None] = mapped_column(String(20))
-    escolaridade_mae: Mapped[str | None] = mapped_column(String(20))
+    assistencia_estudantil: Mapped[str | None] = mapped_column(String(150))
+    saude_mental: Mapped[str | None] = mapped_column(String(150))
+    estresse: Mapped[str | None] = mapped_column(String(150))
+    acompanhamento: Mapped[str | None] = mapped_column(String(150))
+    escolaridade_pai: Mapped[str | None] = mapped_column(String(150))
+    escolaridade_mae: Mapped[str | None] = mapped_column(String(150))
     # texto, não número -- o FasiTech/CSV manda respostas como "Acima de 3"
-    qtd_computador: Mapped[str | None] = mapped_column(String(20))
-    qtd_celular: Mapped[str | None] = mapped_column(String(20))
-    computador_proprio: Mapped[str | None] = mapped_column(String(5))
-    gasto_internet: Mapped[str | None] = mapped_column(String(30))
-    acesso_internet: Mapped[str | None] = mapped_column(String(5))
-    tipo_moradia: Mapped[str | None] = mapped_column(String(10))
+    qtd_computador: Mapped[str | None] = mapped_column(String(150))
+    qtd_celular: Mapped[str | None] = mapped_column(String(150))
+    computador_proprio: Mapped[str | None] = mapped_column(String(150))
+    gasto_internet: Mapped[str | None] = mapped_column(String(150))
+    acesso_internet: Mapped[str | None] = mapped_column(String(150))
+    tipo_moradia: Mapped[str | None] = mapped_column(String(150))
     data_hora: Mapped[str | None] = mapped_column(String(20))
 
 
@@ -125,17 +142,13 @@ SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 
 def get_session() -> Iterator[Session]:
     """Dependência FastAPI: uma sessão por request. Os testes a substituem
-    por uma sessão num SQLite temporário (app.dependency_overrides)."""
+    por uma sessão num PostgreSQL descartável (app.dependency_overrides)."""
     with SessionLocal() as session:
         yield session
 
 
-def criar_schema(engine_alvo) -> None:
-    """Cria tabelas e a view aluno_vigente que faltam. Chamado no lifespan,
-    nunca no import. Idempotente: pode rodar a cada subida."""
-    from app.db.vigente import VIEW_SQL, aluno_vigente
-
-    Base.metadata.create_all(bind=engine_alvo)
-    if aluno_vigente.name not in inspect(engine_alvo).get_view_names():
-        with engine_alvo.begin() as conexao:
-            conexao.execute(text(VIEW_SQL))
+# O schema não é mais criado daqui. Quem cria e evolui as tabelas é o Alembic
+# (backend/migrations), rodado por `alembic upgrade head`. create_all foi
+# removido de propósito: ele cria tabela que falta, mas nunca acrescenta
+# coluna a tabela existente -- foi assim que lote.fechado_em ficou de fora de
+# um banco já criado. Ver docs/migracoes.md.

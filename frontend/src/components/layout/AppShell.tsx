@@ -1,9 +1,11 @@
-import { useState } from 'react';
-import type { FormEvent, ReactNode } from 'react';
+import { useMemo, useState } from 'react';
+import type { FocusEvent, FormEvent, ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import Sidebar from '../Sidebar';
 import SeloLote from '../SeloLote';
+import IdentificacaoAluno from '../ui/IdentificacaoAluno';
 import SelectDropdown from '../ui/SelectDropdown';
+import { buscarAlunos } from '../../domain/busca';
 import { TODOS_PERIODOS, useDados } from '../../hooks/useDados';
 
 export interface Migalha {
@@ -34,28 +36,37 @@ const IconBusca = () => (
 
 /**
  * Moldura comum das telas: sidebar, cabeçalho com breadcrumb da hierarquia
- * Polo → Turma → Aluno e a barra de filtros globais (período + busca
- * direta por matrícula, que é complementar à navegação — doc, itens 3 e 9).
+ * Polo → Turma → Aluno e a barra de filtros globais (período + busca direta
+ * por nome ou matrícula, complementar à navegação — doc, itens 3 e 9).
  */
 export default function AppShell({ titulo, subtitulo, migalhas = [], semFiltros = false, children }: Props) {
   const [menuAberto, setMenuAberto] = useState(false);
   const [busca, setBusca] = useState('');
-  const [erroBusca, setErroBusca] = useState<string | null>(null);
+  const [listaAberta, setListaAberta] = useState(false);
   const { periodos, periodo, setPeriodo, origem, carregando, alunosTodos, registros, lote } = useDados();
   const navigate = useNavigate();
 
-  function buscarMatricula(e: FormEvent) {
-    e.preventDefault();
-    const termo = busca.trim();
-    if (!termo) return;
-    const alvo = alunosTodos.find((a) => String(a.matricula) === termo || a.vigente.nome?.toLowerCase() === termo.toLowerCase());
-    if (!alvo) {
-      setErroBusca('Matrícula não encontrada');
-      return;
-    }
-    setErroBusca(null);
+  // Busca por TRECHO do nome ou da matrícula (ver domain/busca.ts). Como um
+  // termo casa com vários alunos, a caixa lista os resultados em vez de pular
+  // para um deles -- escolher o primeiro calado esconderia os outros.
+  const resultados = useMemo(() => buscarAlunos(alunosTodos, busca), [alunosTodos, busca]);
+  const semResultado = busca.trim().length > 0 && resultados.length === 0;
+
+  function irPara(matricula: number) {
     setBusca('');
-    navigate(`/aluno/${alvo.matricula}`);
+    setListaAberta(false);
+    navigate(`/aluno/${matricula}`);
+  }
+
+  /** Enter vai para o primeiro resultado -- o mais relevante pela ordem da busca. */
+  function aoSubmeter(e: FormEvent) {
+    e.preventDefault();
+    if (resultados.length) irPara(resultados[0].matricula);
+  }
+
+  /** Fecha só quando o foco sai do conjunto caixa+lista, não a cada clique interno. */
+  function aoSairDoFoco(e: FocusEvent<HTMLDivElement>) {
+    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setListaAberta(false);
   }
 
   return (
@@ -106,22 +117,50 @@ export default function AppShell({ titulo, subtitulo, migalhas = [], semFiltros 
                 onChange={setPeriodo}
                 options={[{ value: TODOS_PERIODOS, label: 'Todos' }, ...periodos.map((p) => ({ value: p, label: p }))]}
               />
-              <form onSubmit={buscarMatricula} className="relative flex items-center" role="search">
-                <label htmlFor="busca-matricula" className="sr-only">Buscar por matrícula</label>
-                <span className="absolute left-3.5 pointer-events-none"><IconBusca /></span>
-                <input
-                  id="busca-matricula"
-                  type="search"
-                  inputMode="numeric"
-                  value={busca}
-                  onChange={(e) => { setBusca(e.target.value); setErroBusca(null); }}
-                  placeholder="Ir para matrícula…"
-                  aria-describedby={erroBusca ? 'busca-erro' : undefined}
-                  aria-invalid={erroBusca ? true : undefined}
-                  className="bg-white border border-slate-200 text-slate-700 text-xs font-medium rounded-full pl-9 pr-4 py-2 w-48 focus:outline-none focus:ring-2 focus:ring-blue-400/50"
-                />
-                {erroBusca && <p id="busca-erro" className="ml-2 text-xs text-red-700" role="alert">{erroBusca}</p>}
-              </form>
+              <div className="relative" onBlur={aoSairDoFoco}>
+                <form onSubmit={aoSubmeter} className="relative flex items-center" role="search">
+                  <label htmlFor="busca-aluno" className="sr-only">Buscar aluno por nome ou matrícula</label>
+                  <span className="absolute left-3.5 pointer-events-none"><IconBusca /></span>
+                  <input
+                    id="busca-aluno"
+                    type="search"
+                    autoComplete="off"
+                    value={busca}
+                    onChange={(e) => { setBusca(e.target.value); setListaAberta(true); }}
+                    onFocus={() => setListaAberta(true)}
+                    onKeyDown={(e) => { if (e.key === 'Escape') { setBusca(''); setListaAberta(false); } }}
+                    placeholder="Buscar nome ou matrícula…"
+                    aria-describedby="busca-resumo"
+                    className="bg-white border border-slate-200 text-slate-700 text-xs font-medium rounded-full pl-9 pr-4 py-2 w-56 focus:outline-none focus:ring-2 focus:ring-blue-400/50"
+                  />
+                </form>
+
+                <p id="busca-resumo" className="sr-only" aria-live="polite">
+                  {busca.trim() ? `${resultados.length} aluno(s) encontrado(s)` : ''}
+                </p>
+
+                {listaAberta && busca.trim() && (
+                  <div className="absolute z-30 mt-1 w-72 max-w-[85vw] rounded-2xl bg-white border border-slate-200 shadow-lg overflow-hidden">
+                    {semResultado ? (
+                      <p className="px-4 py-3 text-xs text-slate-500">Nenhum aluno com esse nome ou matrícula.</p>
+                    ) : (
+                      <ul>
+                        {resultados.map((a) => (
+                          <li key={a.matricula}>
+                            <button
+                              type="button"
+                              onClick={() => irPara(a.matricula)}
+                              className="group w-full text-left px-4 py-2 hover:bg-blue-50 focus:outline-none focus-visible:bg-blue-50"
+                            >
+                              <IdentificacaoAluno nome={a.vigente.nome} matricula={a.matricula} compacto />
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </header>

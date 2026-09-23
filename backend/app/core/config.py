@@ -10,14 +10,31 @@ load_dotenv()
 FASITECH_URL = os.getenv("FASITECH_URL", "")
 FASITECH_TOKEN = os.getenv("FASITECH_TOKEN", "")
 
-# Banco. Em produção (docker compose) é PostgreSQL; sem variável cai num
-# SQLite local pra desenvolvimento rápido. Os testes trocam por um SQLite
-# temporário via dependency_overrides -- ver tests/conftest.py.
+# Banco: PostgreSQL, e só. Os testes sobem um PostgreSQL descartável em
+# contêiner (ver tests/conftest.py); em produção é o serviço `db` do compose.
+#
+# Não há mais fallback para SQLite. Ele existia "pra desenvolvimento rápido" e
+# saiu caro: aceitava calado um schema que o PostgreSQL recusa, e o passo 1 do
+# lote 2026-09-L01 quebrou em produção com StringDataRightTruncation enquanto a
+# suíte passava (docs/migracoes.md). Um fallback que diverge do banco real não
+# é conveniência, é um teste que mente. Sem DATABASE_URL, falhar alto é o
+# comportamento correto -- melhor que criar um arquivo .sqlite sem avisar.
 _RAIZ_REPO = Path(__file__).resolve().parents[3]
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    f"sqlite:///{_RAIZ_REPO / 'backend' / 'app' / 'db' / 'BancoDeDados.sqlite'}",
-)
+DATABASE_URL = os.getenv("DATABASE_URL", "")
+
+if not DATABASE_URL:
+    raise RuntimeError(
+        "DATABASE_URL não configurada. Copie backend/.env.example para "
+        "backend/.env e aponte para o PostgreSQL (o serviço `db` do "
+        "docker-compose.yml). Não há fallback para SQLite."
+    )
+
+if DATABASE_URL.startswith("sqlite"):
+    raise RuntimeError(
+        f"DATABASE_URL aponta para SQLite ({DATABASE_URL.split(':')[0]}). "
+        "Este projeto roda em PostgreSQL: o schema usa tipos e larguras que o "
+        "SQLite ignora, e testar noutro banco esconde defeito (docs/migracoes.md)."
+    )
 
 # Onde ficam os lotes de dados brutos (docs/governanca_dados.md, seção 3.2).
 # No container é /data/raw/lotes (volume ./data). Os serviços leem este nome

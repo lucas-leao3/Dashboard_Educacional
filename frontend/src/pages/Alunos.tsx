@@ -10,6 +10,7 @@ import SelectDropdown from '../components/ui/SelectDropdown';
 import type { DimensaoId, Sinalizacao } from '../data/tipos';
 import { agregar } from '../domain/agregacao';
 import type { Aluno } from '../domain/agregacao';
+import IdentificacaoAluno from '../components/ui/IdentificacaoAluno';
 import { ROTULO_SINALIZACAO, SINALIZACOES } from '../domain/classificacao';
 import { DIMENSOES } from '../domain/dimensoes';
 import { useDados } from '../hooks/useDados';
@@ -42,7 +43,7 @@ export default function Alunos() {
   const { polo = '', turma = '' } = useParams();
   const nomePolo = decodeURIComponent(polo);
   const nomeTurma = decodeURIComponent(turma);
-  const { alunos, alunosTodos } = useDados();
+  const { alunos, alunosTodos, crgSemestres } = useDados();
   const [sinal, setSinal] = useState<Sinalizacao | 'todas'>('todas');
   const [ordem, setOrdem] = useState<Ordem>('sinalizacao');
   const [dimensaoId, setDimensaoId] = useState<DimensaoId>('academica');
@@ -129,8 +130,8 @@ export default function Alunos() {
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
                 {comHistorico.map((a) => (
                   <Link key={a.matricula} to={`/aluno/${a.matricula}`} className="block rounded-xl border border-slate-100 p-3 hover:border-blue-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400">
-                    <p className="font-semibold text-slate-800 text-sm">{a.vigente.nome ?? `Matrícula ${a.matricula}`}</p>
-                    <p className="text-[11px] text-slate-500">{textoVariacao(a, dimensaoId)}</p>
+                    <IdentificacaoAluno nome={a.vigente.nome} matricula={a.matricula} compacto />
+                    <p className="text-[11px] text-slate-500">{textoVariacao(a, dimensaoId, crgSemestres)}</p>
                     <Trajetoria aluno={a} dimensaoId={dimensaoId} compacto />
                   </Link>
                 ))}

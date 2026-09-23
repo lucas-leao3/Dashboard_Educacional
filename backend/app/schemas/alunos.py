@@ -46,9 +46,23 @@ class AlunoCreate(BaseModel):
 
 
 class AlunoOut(AlunoCreate):
-    """Dados devolvidos pela API: os mesmos campos do cadastro, mais o id do banco."""
+    """Dados devolvidos pela API: os mesmos campos do cadastro, mais o id do
+    banco e os três campos derivados da matrícula pela view `aluno_vigente`
+    (governança §4.8).
+
+    Os derivados NÃO estão em AlunoCreate de propósito: ninguém os envia e
+    ninguém os grava -- o banco os calcula. Ficam com default None só para o
+    caso de a linha não vir da view; quando vem, o valor é o que o banco
+    calculou, não algo remontado aqui."""
 
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     ingestao_id: int
+
+    #: Ano de ingresso, dígitos 1-4 da matrícula. None se ela fugir do padrão.
+    turma: str | None = None
+    #: Código do polo, dígitos 5-8 da matrícula.
+    polo_cod: str | None = None
+    #: Nome do polo, resolvido na tabela `polo`. None se o código for novo.
+    polo_nome: str | None = None

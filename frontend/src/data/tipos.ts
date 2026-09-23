@@ -14,6 +14,11 @@ export interface Registro {
   primeiro_ano_eletivo: string | null;
   genero: string | null;
   polo: string | null;
+  /* Derivados da matrícula pela view `aluno_vigente` (governança §4.8). O
+     banco é quem calcula; vêm null quando a origem é a demonstração. */
+  turma: string | null;
+  polo_cod: string | null;
+  polo_nome: string | null;
   cor_etnia: string | null;
   pcd: string | null;
   tipo_deficiencia: string | null;
@@ -57,6 +62,17 @@ export interface Lote {
   observacao: string | null;
   ingestoes: Ingestao[];
   excecoes_por_motivo: Record<string, number>;
+}
+
+/**
+ * Espelha `CrgSemestreOut` (backend/app/schemas/crg.py): um ponto da
+ * trajetória acadêmica. `crg` null = semestre não apurado (governança §4.6);
+ * quem desenha faz lacuna ali, nunca zero.
+ */
+export interface CrgSemestre {
+  matricula: number;
+  semestre: string;
+  crg: number | null;
 }
 
 /** Sinalização de uma dimensão ou do aluno (doc de alinhamento, item 10). */

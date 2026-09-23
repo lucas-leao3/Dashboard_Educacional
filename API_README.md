@@ -42,7 +42,7 @@ $env:PYTHONPATH = "backend"
 venvDashboard\Scripts\python.exe -m uvicorn app.main:app --reload
 ```
 
-Servidor sobe em `http://127.0.0.1:8000`. Sem `DATABASE_URL` no ambiente, a API cai num SQLite local (`backend/app/db/BancoDeDados.sqlite`, ver `backend/app/core/config.py`) — útil para desenvolvimento rápido, mas é o `docker compose` acima que sobe o PostgreSQL de verdade.
+Servidor sobe em `http://127.0.0.1:8000`. **`DATABASE_URL` é obrigatória** e tem que apontar para PostgreSQL: sem ela — ou apontando para SQLite — a aplicação recusa subir, com mensagem dizendo o que fazer. Não há mais fallback silencioso para um arquivo `.sqlite` local; ele escondia defeito de schema que só aparecia em produção (ver `docs/migracoes.md`).
 
 ## As Rotas
 
@@ -87,7 +87,7 @@ Busca um lote por id, no mesmo formato acima.
 - `404` — não existe
 
 ### 4. `GET /alunos`
-Lista o valor **vigente** de cada aluno (view `aluno_vigente` — a ingestão mais recente por `matricula, periodo`).
+Lista o valor **vigente** de cada aluno (view `aluno_vigente` — a ingestão mais recente por `matricula, periodo`), com **turma e polo derivados da matrícula** pela própria view (governança §4.8).
 
 **Resposta**: `200` com array de alunos (vazio se o banco tá vazio)
 
@@ -101,10 +101,40 @@ Lista o valor **vigente** de cada aluno (view `aluno_vigente` — a ingestão ma
     "nome": "NALBERTH DE LEAO CASTRO",
     "genero": "Masculino",
     "renda": "Até 1 salário mínimo",
+    "polo": null,
+    "turma": "2020",
+    "polo_cod": "1604",
+    "polo_nome": "Cametá",
     ...
   }
 ]
 ```
+
+#### Turma e polo (`turma`, `polo_cod`, `polo_nome`)
+
+Só de leitura: ninguém envia, ninguém grava — a view calcula a partir dos 12 dígitos da matrícula (`2020` `1604` `0002` = turma, polo, sequencial), e `polo_nome` sai de um `LEFT JOIN` com a tabela `polo`.
+
+Existem porque **a fonte não manda esses dados**: verificada em 2026-09-23, a API do FasiTech devolve `polo` nulo em 187 de 187 registros e não devolve `primeiro_ano_eletivo` campo nenhum. O campo `polo` continua na resposta por fidelidade ao que foi gravado — e é justamente por isso que ele aparece `null` no exemplo acima.
+
+| Situação | `turma` | `polo_cod` | `polo_nome` |
+|---|---|---|---|
+| Matrícula de 12 dígitos, polo conhecido | `"2020"` | `"1604"` | `"Cametá"` |
+| Polo ainda não cadastrado na tabela `polo` | `"2020"` | `"9999"` | `null` |
+| Matrícula fora do padrão de 12 dígitos | `null` | `null` | `null` |
+
+Polo novo é `INSERT INTO polo` — não exige deploy. As três colunas também entram no `vigente.csv` gerado ao fechar o lote.
+
+### 4b. `GET /crg-semestres`
+A **trajetória acadêmica**: um ponto por `(matricula, semestre)`, lido da view `crg_semestre_vigente` (ingestão mais recente por chave, como `aluno_vigente`).
+
+```json
+[{ "matricula": 202016040011, "semestre": "2024.1", "crg": 7.69 },
+ { "matricula": 202016040011, "semestre": "2025.2", "crg": null }]
+```
+
+**Por que existe, se `/alunos` já traz `CRG`.** O `CRG` de `/alunos` é o do **último semestre apurado, repetido em todos os períodos de coleta do aluno** — o passo 2 grava o mesmo valor em cada linha vigente. Serve para o corte transversal ("como está a turma agora"); uma série temporal sobre ele seria uma reta horizontal por construção. Quem quer evolução lê esta rota.
+
+`crg: null` é **semestre não apurado** na data de emissão do histórico (§4.6, a regra do zero), e a linha **continua na resposta**. Quem desenha faz lacuna ali: sumir da lista colaria dois semestres distantes como vizinhos, e virar zero inventaria uma queda. Na base atual 2025.2 e 2026.1 têm 56 alunos e nenhuma nota.
 
 ### 5. `GET /alunos/{matricula}`
 Busca um aluno vigente por matrícula (retorna o período mais recente se houver múltiplos).
@@ -293,7 +323,7 @@ FASITECH_TOKEN=...
 ```
 crg_historico.csv        # 56 alunos com CRG do histórico
 DadosAgrupados.csv       # planilha manual antiga
-BancoDeDados.sqlite      # banco SQLite local (auto-criado)
+BancoDeDados.sqlite      # resíduo do SQLite abandonado — pode ser apagado
 ```
 
 ## Arquitetura
@@ -308,6 +338,10 @@ backend/app/
 │   ├── fasitech_client.py          # HTTP client paginado
 │   └── crg_historico.py            # leitor CSV histórico
 └── core/config.py                  # .env loader
+
+backend/migrations/                  # revisões do Alembic (ver docs/migracoes.md)
+├── env.py                          # lê a URL de app.core.config
+└── versions/                       # uma revisão por mudança de schema
 
 tests/                               # 52 testes no total (6 arquivos)
 ├── conftest.py                     # fixture client (banco isolado)

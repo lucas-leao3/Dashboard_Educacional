@@ -4,7 +4,8 @@ from pydantic import ValidationError
 from sqlalchemy import select, true
 from sqlalchemy.orm import Session
 
-from app.db.engine import CrgSemestre, Ingestao, Usuarios, get_session
+from app.db.engine import CrgSemestre, Ingestao, Polo, Usuarios, get_session
+from app.db.matricula import codigo_de_polo, turma_da_matricula
 from app.db.vigente import aluno_vigente
 from app.schemas.alunos import AlunoCreate, AlunoOut
 from app.services import lotes as servico
@@ -21,6 +22,23 @@ def _inserir_snapshot(session: Session, dados: dict, ingestao_id: int) -> Usuari
     aluno = Usuarios(**dados, ingestao_id=ingestao_id)
     session.add(aluno)
     return aluno
+
+
+def _saida_do_snapshot(session: Session, aluno: Usuarios) -> AlunoOut:
+    """AlunoOut de uma linha recém-gravada em `usuarios`.
+
+    Quem calcula turma e polo é a view `aluno_vigente` (§4.8), mas a linha
+    criada aqui pode não ser a vigente daquele (matricula, periodo) -- se
+    outra ingestão, mais recente, já gravou o mesmo par, ela é que manda. E um
+    201 tem que descrever o que acabou de ser gravado, não outra linha. Então
+    os derivados saem da mesma regra (app.db.matricula) e da mesma tabela
+    `polo` que a view usa; nada de mapa paralelo."""
+    saida = AlunoOut.model_validate(aluno)
+    saida.turma = turma_da_matricula(aluno.matricula)
+    saida.polo_cod = codigo_de_polo(aluno.matricula)
+    polo = session.get(Polo, saida.polo_cod) if saida.polo_cod else None
+    saida.polo_nome = polo.nome if polo else None
+    return saida
 
 
 @router.get("", response_model=list[AlunoOut])
@@ -49,7 +67,7 @@ def criar_aluno(dados: AlunoCreate, lote: str = LoteParam, session: Session = De
     aluno = _inserir_snapshot(session, dados.model_dump(), ingestao.id)
     servico.fechar_ingestao(session, ingestao, lidos=1, aceitos=1, rejeitados=0)
     session.refresh(aluno)
-    return aluno
+    return _saida_do_snapshot(session, aluno)
 
 
 @router.post("/sincronizar")

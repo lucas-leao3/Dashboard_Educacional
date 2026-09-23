@@ -10,6 +10,42 @@ Quando as maquetes (`Reunião-2-Audio-*.png`) divergem do documento, vale o docu
 | `/` | Visão Geral dos Polos: KPIs + comparativo por indicador selecionável, n sempre visível | 3, 4, 8 |
 | `/polo/:polo` | Turmas do polo: cards (alunos, CRG médio, sinalizações) + comparativo entre turmas | 5 |
 | `/polo/:polo/turma/:turma` | Alunos da turma: KPIs, filtros, cards de perfil com as 4 dimensões, trajetórias | 5, 6, 7, 10 |
+| `/analises/bidimensional` | CRG médio por categoria (cor/etnia, gênero, renda, trabalho, polo, turma), com o n de cada barra | 4, 8 |
+| `/analises/distribuicao` | Histograma de CRG em faixas inteiras, com a média marcada | 4 |
+| `/analises/longitudinal` | CRG médio por **semestre letivo**, uma linha por turma | 7 |
+
+### As telas de Análises
+
+As três liam arrays fixos no código até 2026-09-23 — valores que contradiziam a base (mostravam a categoria "Indígena", que não existe nela, e escondiam "Quilombola" e "Amarelo", que existem) e filtros que mudavam o estado sem filtrar nada. Hoje saem de `domain/analises.ts`, sobre os mesmos dados das outras telas.
+
+Três regras que valem nelas:
+
+- **O `n` é sempre visível.** Nesta base há categoria com um aluno só; sem o n, a barra dela parece tão sólida quanto a de quarenta.
+- **Ausência de nota nunca vira zero.** No longitudinal, semestre sem apuração é lacuna na linha (`connectNulls={false}`).
+- **A distribuição não traz curva ajustada.** A anterior era uma gaussiana decorativa; ajustar uma normal de verdade afirmaria uma distribuição que ninguém testou. No lugar vai a média, marcada sobre o eixo.
+
+O eixo do longitudinal é o **semestre letivo**, não o período de coleta — ver a explicação em `API_README.md`, `GET /crg-semestres`.
+
+### Como um aluno é identificado
+
+Sempre **`Nome · matrícula`**, em toda tela, por `domain/aluno.ts`. Quem não tem nome aparece como **`— · matrícula`**.
+
+O nome **não vem do FasiTech** (a API não devolve esse campo): ele é lido do histórico em PDF, no passo 2 do lote. Como só parte da base tem PDF — hoje 56 de 111 alunos —, metade tem nome e metade não. Antes cada tela resolvia isso sozinha com `nome ?? "Matrícula X"`, e a grade saía meio com nome e meio com número, parecendo defeito da interface quando era a cobertura dos PDFs aparecendo.
+
+Duas decisões dentro disso:
+
+- **A matrícula nunca some.** É o identificador estável (dela saem turma e polo, §4.8) e é por ela que se cruza acadêmico com socioeconômico. Só o nome faria dois homônimos virarem a mesma linha aos olhos de quem lê.
+- **O nome é capitalizado na exibição.** O SIGAA entrega em CAIXA ALTA, que atrapalha a leitura de uma grade com dezenas de nomes; as partículas (`de`, `da`, `dos`, `e`) ficam em minúscula. A transformação é só de tela: o valor gravado em `usuarios` e o `vigente.csv` do lote continuam com o original, que é o que vale como registro.
+
+**Em duas linhas, nome em cima e matrícula embaixo** (`components/ui/IdentificacaoAluno.tsx`). Numa linha só (`Nome · matrícula`) o `truncate` do card comia justamente a matrícula — "Andrey Azevedo do Carmo · 20…" —, que é o identificador estável e o que nunca deveria sumir. Empilhado, o nome pode truncar à vontade e os 12 dígitos cabem sempre. No Perfil o `<h1>` também trunca, então lá o nome fica no título e a matrícula abre o subtítulo.
+
+A tabela de cobertura do lote (`/dados`) é a exceção deliberada: lá matrícula e nome já são colunas separadas, então não se repete a identificação — só o mesmo `—` quando falta.
+
+### Busca do cabeçalho
+
+Casa por **trecho** do nome ou da matrícula, sem caixa e sem acento (`domain/busca.ts`), e lista os resultados em vez de pular para um deles — um sobrenome comum casa com vários, e escolher o primeiro calado esconderia os outros. `Enter` vai para o primeiro, que é o mais relevante pela ordem: matrícula exata, depois quem começa com o termo, depois quem apenas o contém.
+
+Antes era igualdade exata contra o nome cru. Como a tela passou a mostrar o nome capitalizado, copiar o que estava na tela e colar na busca não encontrava nada.
 | `/aluno/:matricula` | Perfil individual: 4 dimensões detalhadas + trajetória por dimensão | 6, 7 |
 | `/dados` | Inserção de lote (abrir → enviar PDFs e rodar → conferir e fechar) + cobertura do lote (correspondência por matrícula) | spec `2026-09-18-tela-dados-lote-design.md` |
 | `/analises/*` | Gráficos agregados do dashboard anterior (Bidimensional, Distribuição, Longitudinal) | — |
@@ -27,7 +63,8 @@ Filtros globais no cabeçalho: **Período** (item 9) e **busca por matrícula** 
 - **"Sem dado"** é hachurado cinza e significa "não coletado", nunca "bom".
 - **n baixo**: grupo com menos de 15 alunos (`N_MINIMO`) recebe o aviso no comparativo.
 - **Cores**: estado (verde/âmbar/vermelho) reservado para sinalização, sempre com texto ao lado;
-  cor categórica só para polos, fixa por nome (não por posição no ranking). Paletas validadas
+  cor categórica só para polos (nominal) e rampa ordinal de um hue só para turmas (ano de
+  ingresso: a ordem é o dado), sempre fixa por entidade, não por posição no ranking. Paletas validadas
   para daltonismo com o validador da skill `dataviz`.
 
 ## Critério provisório de sinalização (`frontend/src/domain/classificacao.ts`)

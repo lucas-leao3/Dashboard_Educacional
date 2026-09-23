@@ -171,6 +171,11 @@ Regra prática: qualquer coisa que saia do ambiente controlado passa por uma fun
 
 Cinco tabelas novas. `usuarios` muda de comportamento. O resto continua.
 
+> O schema é versionado com Alembic desde 22/09/2026: cada mudança de tabela
+> ou coluna vira uma revisão em `backend/migrations/versions/`, commitada junto
+> com o código. Como alterar o schema e como conferir se banco e modelo estão
+> de acordo: **`docs/migracoes.md`**.
+
 ```
 lote ──< ingestao ──< usuarios          (1 lote, 3 ingestões, N linhas)
   │         │
@@ -302,7 +307,7 @@ A data de emissão está no rodapé de cada página (`Emitido em: 10/12/2025`) e
 
 O cruzamento acadêmico × socioeconômico que o dashboard mostra é o da primeira linha. O semestre vem do histórico; o socioeconômico se pendura nele pela matrícula e pelo período em que a coleta fechou.
 
-> **Sintaxe:** o DDL é PostgreSQL. Em SQLite, `SERIAL` vira `INTEGER PRIMARY KEY AUTOINCREMENT`, `SMALLINT` e `NUMERIC` viram `INTEGER`/`REAL`, `TIMESTAMP` vira `TEXT`. A view já está na forma portável.
+> **Sintaxe:** o DDL é PostgreSQL, e é o único banco do projeto — em produção, em desenvolvimento e na suíte de testes, sempre `postgres:17-alpine`. A tabela de equivalências para SQLite que ficava aqui saiu junto com o SQLite (ver `docs/migracoes.md`).
 
 ### 4.8. Turma e polo saem da matrícula
 
@@ -341,6 +346,21 @@ CREATE TABLE polo (
 ```
 
 > **Guarde a regra como regra.** A estrutura da matrícula é uma convenção institucional, não uma lei da natureza. Por isso a derivação fica em um lugar só (coluna gerada ou uma função), documentada aqui, e não espalhada por consultas do dashboard. Matrícula fora do padrão de 12 dígitos vira `excecao` com motivo `matricula_invalida`, em vez de gerar turma errada silenciosamente.
+
+**Confirmado contra a API em 2026-09-23, e não era mais opcional.** Consulta aos 187 registros de `dados-sociais/raw`: o campo `polo` volta **nulo em 187 de 187** e o campo `primeiro_ano_eletivo` **não existe no payload** (a resposta traz 16 chaves, e nenhuma delas é essa). Ou seja, os dois campos que o dashboard mostrava como "Sem polo informado"/"Sem turma informada" não estavam sendo perdidos no caminho — a fonte nunca os enviou. A matrícula é a única origem possível dos dois. Os 187 registros usam exatamente os três códigos da tabela acima (`1604`: 123, `8594`: 46, `8564`: 18) e têm 100% de 12 dígitos, então a derivação cobre a base inteira sem exceção.
+
+**Onde a derivação mora: no banco.** A view `aluno_vigente` ganhou três colunas — `turma`, `polo_cod` e `polo_nome` — e uma tabela `polo` (`codigo` → `nome`) resolve o nome por `LEFT JOIN`. Assim o dashboard, o `vigente.csv` e quem consultar por SQL leem o mesmo valor, sem cada um refazer a conta. Polo novo passa a ser `INSERT INTO polo`, não deploy. Revisão `a3f1c2d40b7e`.
+
+**Por que view e não coluna gerada**, apesar do DDL acima. Dois motivos, nenhum deles de portabilidade — o projeto roda só em PostgreSQL:
+
+1. **A coluna gerada não dispensa a view.** Ela resolveria `turma` e `polo_cod`, que são recortes da matrícula, mas `polo_nome` sai de um `LEFT JOIN` com a tabela `polo` — e coluna gerada não pode consultar outra tabela. Seria a derivação em dois lugares para entregar um valor só.
+2. **`usuarios` é tabela de auditoria.** Ela é append-only e existe para registrar *o que a fonte mandou*. Valor calculado pertence ao modelo de leitura (a view), não ao registro bruto. Com a derivação na view, reinterpretar a regra amanhã é uma revisão que troca a view, sem tocar em uma linha de dado histórico.
+
+A expressão protege o caso que esta seção exige: `CASE WHEN length(CAST(matricula AS TEXT)) = 12` devolve `NULL` para matrícula fora do padrão, em vez de fatiar lixo e inventar uma turma.
+
+**No frontend**, `frontend/src/domain/matricula.ts` guarda a mesma regra como *reserva*: ela só entra quando não há API (o dataset de demonstração) ou quando o código do polo ainda não está na tabela — aí o código cru aparece como `Polo <código>`, em vez de o polo sumir da tela. A escolha entre o valor do banco e o derivado local é feita num lugar só, `consolidarAlunos` em `domain/agregacao.ts`, de onde todas as telas herdam.
+
+**Verificado em PostgreSQL 17** (o mesmo `postgres:17-alpine` do compose e da suíte), com `upgrade`, `downgrade` e reaplicação, e com as 187 matrículas reais da API atravessando `POST /alunos` → banco → `GET /alunos`: 178 de 178 linhas voltam com turma e polo preenchidos.
 
 ---
 
@@ -416,7 +436,7 @@ Por que não é o primeiro passo: migrando hoje, você fica com os mesmos proble
 Por que ainda assim vale:
 
 - **`JSONB`** para guardar o payload cru do FasiTech como chegou, espelhando o `fasitech.json` do lote. Permite *provar* o que a fonte respondeu, não só o que você extraiu.
-- **Roles e row-level security.** Dado pessoal sensível precisa de controle de acesso, e em SQLite ele não existe.
+- **Roles e row-level security.** Dado pessoal sensível precisa de controle de acesso. Com o PostgreSQL já em uso, isso deixou de ser argumento de migração e virou trabalho a fazer: nenhuma role além do dono foi criada até aqui.
 
 Por que junto: **o schema vai ser reescrito de qualquer jeito** (seção 4). Fazer a reescrita já em PostgreSQL evita fazer duas vezes. Migrar 2 MB no final leva minutos.
 
@@ -432,7 +452,7 @@ Por que junto: **o schema vai ser reescrito de qualquer jeito** (seção 4). Faz
 | 4 | Criar `crg_semestre`; reescrever a extração dos PDFs para semestre + regra do zero; `/atualizar-crg` passa a gravar nela | problema 4 | sim | **feito** |
 | 5 | `/sincronizar` congela `fasitech.json` e insere sempre — o `fasitech.json` do L01 nasce aqui | problema 2 | sim | **feito** |
 | 6 | Migrar para PostgreSQL e subir backend + banco com `docker compose` (junto dos passos 3–5) | JSONB, acesso | sim | **feito** |
-| 7 | Derivar turma e polo da matrícula | análise por turma e polo | sim | fora do escopo do L01 |
+| 7 | Derivar turma e polo da matrícula | análise por turma e polo | sim | **feito** — na view `aluno_vigente` + tabela `polo` (revisão `a3f1c2d40b7e`), com reserva no frontend |
 | 8 | Rótulos por regra documentada | perfis | sim | fora do escopo do L01 |
 
 Os passos 3 a 6 estão prontos: `POST /lotes`, `/alunos/sincronizar`, `/alunos/atualizar-crg`, a view `aluno_vigente` e o compose com PostgreSQL. O que falta é **rodar** o L01 de ponta a ponta e ligar o dashboard à API — roteiro completo em `docs/operacao_lote.md`, com `scripts/lote.py` fazendo `abrir`/`rodar`/`fechar`.

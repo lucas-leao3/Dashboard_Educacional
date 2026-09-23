@@ -5,7 +5,8 @@ export function registro(parcial: Partial<Registro> = {}): Registro {
   return {
     id: 1, ingestao_id: 1, matricula: 1, periodo: '2024.(1 e 2)', CRG: null,
     nome: null, data_de_nascimento: null, primeiro_ano_eletivo: null, genero: null,
-    polo: null, cor_etnia: null, pcd: null, tipo_deficiencia: null, renda: null,
+    polo: null, turma: null, polo_cod: null, polo_nome: null,
+    cor_etnia: null, pcd: null, tipo_deficiencia: null, renda: null,
     deslocamento: null, trabalho: null, assistencia_estudantil: null, saude_mental: null,
     estresse: null, acompanhamento: null, escolaridade_pai: null, escolaridade_mae: null,
     qtd_computador: null, qtd_celular: null, computador_proprio: null, gasto_internet: null,

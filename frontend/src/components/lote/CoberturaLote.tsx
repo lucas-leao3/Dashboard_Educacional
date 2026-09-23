@@ -1,5 +1,7 @@
 import KpiCard from '../ui/KpiCard';
 import { resumirCobertura } from '../../domain/lote';
+import { SEM_NOME, nomeExibido } from '../../domain/aluno';
+import { poloParaExibir, turmaParaExibir } from '../../domain/matricula';
 import type { Correspondencia, Lote } from '../../data/tipos';
 
 interface Props {
@@ -49,13 +51,18 @@ export default function CoberturaLote({ lote, linhas, erro }: Props) {
         {linhas && (
           <table className="w-full text-sm">
             <thead className="text-left text-xs uppercase tracking-wide text-slate-500 bg-slate-50">
-              <tr><th className="px-4 py-2">Matrícula</th><th className="px-4 py-2">Nome</th><th className="px-4 py-2">Acadêmico</th><th className="px-4 py-2">Socioeconômico</th><th className="px-4 py-2">Faltando</th></tr>
+              <tr><th className="px-4 py-2">Matrícula</th><th className="px-4 py-2">Nome</th><th className="px-4 py-2">Polo</th><th className="px-4 py-2">Turma</th><th className="px-4 py-2">Acadêmico</th><th className="px-4 py-2">Socioeconômico</th><th className="px-4 py-2">Faltando</th></tr>
             </thead>
             <tbody>
               {linhas.map((l) => (
                 <tr key={l.matricula} className="border-t border-slate-100">
                   <td className="px-4 py-2 font-mono">{l.matricula}</td>
-                  <td className="px-4 py-2">{l.nome ?? <span className="text-slate-400">—</span>}</td>
+                  {/* Tabela: matrícula e nome já são colunas separadas, então aqui
+                      não se repete a identificação -- só o mesmo marcador de ausência. */}
+                  <td className="px-4 py-2">{nomeExibido(l.nome) ?? <span className="text-slate-400">{SEM_NOME}</span>}</td>
+                  {/* Derivados da matrícula (governança §4.8): a API não manda nenhum dos dois. */}
+                  <td className="px-4 py-2">{poloParaExibir(l.matricula)}</td>
+                  <td className="px-4 py-2">{turmaParaExibir(l.matricula)}</td>
                   <td className="px-4 py-2">{l.academico ? 'Sim' : 'Não'}</td>
                   <td className="px-4 py-2">{l.socioeconomico ? 'Sim' : 'Não'}</td>
                   <td className="px-4 py-2">{ROTULO_FALTANDO[l.faltando]}</td>

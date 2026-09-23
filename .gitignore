@@ -195,6 +195,8 @@ local/
 
 # Data files (se houver dados sensíveis)
 data/
+docs/
+fasitech/
 *.csv
 *.xlsx
 *.xls
@@ -245,3 +247,4 @@ comandosEspeciais.txt
 SECURITY_INCIDENT.md
 
 *.pfx
+

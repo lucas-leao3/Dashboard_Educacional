@@ -1,6 +1,6 @@
-import { SEM_POLO, SEM_TURMA } from '../data/tipos';
-import type { DimensaoId, Registro, Sinalizacao } from '../data/tipos';
+import type { CrgSemestre, DimensaoId, Registro, Sinalizacao } from '../data/tipos';
 import { classificarAluno, classificarDimensao, fatoresDoRegistro, pontuarDimensao } from './classificacao';
+import { poloParaExibir, turmaParaExibir } from './matricula';
 
 /** Abaixo disto o comparativo mostra o aviso "n baixo" (provisório). */
 export const N_MINIMO = 15;
@@ -60,8 +60,16 @@ export function consolidarAlunos(registros: Registro[], periodo?: string): Aluno
     const porDimensao = Object.fromEntries(DIMENSAO_IDS.map((d) => [d, classificarDimensao(d, vigente)])) as Record<DimensaoId, Sinalizacao>;
     alunos.push({
       matricula,
-      polo: primeiroPreenchido(ordenados, 'polo') ?? SEM_POLO,
-      turma: primeiroPreenchido(ordenados, 'primeiro_ano_eletivo') ?? SEM_TURMA,
+      // Turma e polo vêm DERIVADOS DO BANCO (view `aluno_vigente`, §4.8):
+      // usar o que a API mandou mantém dashboard, vigente.csv e consulta SQL
+      // dizendo a mesma coisa. A derivação local (./matricula.ts) só entra
+      // quando não há API -- o dataset de demonstração -- ou quando o código
+      // do polo ainda não está na tabela `polo` (aí polo_nome vem nulo e o
+      // código cru aparece, em vez do polo sumir da tela).
+      polo: primeiroPreenchido(ordenados, 'polo_nome')
+        ?? poloParaExibir(matricula, primeiroPreenchido(ordenados, 'polo')),
+      turma: primeiroPreenchido(ordenados, 'turma')
+        ?? turmaParaExibir(matricula, primeiroPreenchido(ordenados, 'primeiro_ano_eletivo')),
       registros: ordenados,
       vigente,
       sinalizacao: classificarAluno(vigente),
@@ -185,10 +193,41 @@ export function agregarPorTurma(alunos: Aluno[], polo: string): AgregadoTurma[] 
 /* Trajetória longitudinal por dimensão (doc, item 7)                   */
 /* ------------------------------------------------------------------ */
 
-export interface PontoTrajetoria { periodo: string; valor: number | null }
+/** `rotulo` é o período de coleta, ou o semestre letivo na dimensão acadêmica
+ *  -- os dois eixos são diferentes e não se misturam na mesma série. */
+export interface PontoTrajetoria { rotulo: string; valor: number | null }
 
-export function trajetoriaPorDimensao(aluno: Aluno, dimensao: DimensaoId): PontoTrajetoria[] {
-  return aluno.registros.map((r) => ({ periodo: r.periodo, valor: pontuarDimensao(dimensao, r) }));
+/** '2024.1' -> 4049, para ordenar cronologicamente. */
+function chaveSemestre(semestre: string): number {
+  const m = semestre.match(/^(\d{4})\.(\d)/);
+  return m ? Number(m[1]) * 2 + Number(m[2]) : Number.POSITIVE_INFINITY;
+}
+
+/**
+ * Trajetória do aluno numa dimensão.
+ *
+ * A acadêmica sai de `crgSemestres` (GET /crg-semestres), e não do CRG dos
+ * registros: o passo 2 do lote grava o CRG do último semestre apurado em
+ * TODOS os períodos do aluno, então uma série sobre ele seria uma reta
+ * horizontal por construção -- era o que este gráfico desenhava. Sem
+ * histórico acadêmico a série vem vazia, e quem exibe avisa; inventar pontos
+ * a partir do CRG repetido seria pior que não mostrar nada.
+ *
+ * As outras três dimensões continuam por período de coleta, que é o eixo
+ * certo delas: são respostas de questionário.
+ */
+export function trajetoriaPorDimensao(
+  aluno: Aluno,
+  dimensao: DimensaoId,
+  crgSemestres: CrgSemestre[] = [],
+): PontoTrajetoria[] {
+  if (dimensao === 'academica') {
+    return crgSemestres
+      .filter((c) => c.matricula === aluno.matricula)
+      .sort((a, b) => chaveSemestre(a.semestre) - chaveSemestre(b.semestre))
+      .map((c) => ({ rotulo: c.semestre, valor: c.crg }));
+  }
+  return aluno.registros.map((r) => ({ rotulo: r.periodo, valor: pontuarDimensao(dimensao, r) }));
 }
 
 /** Variação entre o primeiro e o último ponto com valor; null se < 2 pontos. */
