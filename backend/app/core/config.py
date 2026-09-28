@@ -45,3 +45,10 @@ RAIZ_LOTES = Path(os.getenv("DADOS_RAW_DIR", _RAIZ_REPO / "data" / "raw" / "lote
 # POST /lotes/{id}/fechar. Regeneráveis a partir do banco -- não vão para o
 # repositório de dados. No container é /data/processed.
 RAIZ_PROCESSADA = Path(os.getenv("DADOS_PROCESSED_DIR", _RAIZ_REPO / "data" / "processed"))
+
+# Assistente de consultas (docs/superpowers/specs/2026-09-25-assistente-consultas-design.md).
+# Sem GROQ_API_KEY o app sobe normalmente: só POST /assistente/perguntar
+# responde 503. /assistente/executar não usa o LLM e segue funcionando.
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+GROQ_MODELO = os.getenv("GROQ_MODELO", "llama-3.3-70b-versatile")
+GROQ_URL = os.getenv("GROQ_URL", "https://api.groq.com/openai/v1")
