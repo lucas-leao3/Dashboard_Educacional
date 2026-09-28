@@ -10,19 +10,18 @@ interface Props {
   lote: Lote;
 }
 
-/** Selo do lote vigente no AppShell -- deixa claro de onde vem o dado real. */
+/**
+ * Selo do lote vigente no AppShell -- deixa claro de onde vem o dado real e
+ * que os indicadores usam só alunos integrados.
+ */
 export default function SeloLote({ lote }: Props) {
-  const total = Object.values(lote.excecoes_por_motivo).reduce((soma, n) => soma + n, 0);
-  const detalheExcecoes = Object.entries(lote.excecoes_por_motivo)
-    .map(([motivo, n]) => `${motivo}: ${n}`)
-    .join(', ');
-
+  const periodo = lote.periodos_cobertos.join(', ');
   return (
     <span
       className="hidden sm:inline-flex shrink-0 text-[10px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2.5 py-1"
-      title={detalheExcecoes || 'Nenhuma exceção neste lote'}
+      title="Indicadores calculados só com alunos integrados (acadêmico + socioeconômico). Os demais estão no relatório do lote, na tela Dados."
     >
-      Lote {lote.id} · {formatarData(lote.executado_em)} · {total} exceções
+      Lote {lote.id}{periodo && ` · período ${periodo}`} · {formatarData(lote.executado_em)}
     </span>
   );
 }

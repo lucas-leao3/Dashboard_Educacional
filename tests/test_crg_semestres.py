@@ -7,7 +7,7 @@ coleta do aluno -- serve para o corte transversal, não para trajetória.
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.db.engine import CrgSemestre, Ingestao
+from app.db.engine import CrgSemestre, Ingestao, Usuarios
 
 
 async def _ingestao(db_engine, lote_id: str, passo: int = 2) -> int:
@@ -19,10 +19,15 @@ async def _ingestao(db_engine, lote_id: str, passo: int = 2) -> int:
         return ingestao.id
 
 
-async def _gravar(db_engine, ingestao_id: int, linhas: list[tuple[int, str, float | None]]) -> None:
+async def _gravar(db_engine, ingestao_id: int, linhas: list[tuple[int, str, float | None]], socio: bool = True) -> None:
+    """Grava os semestres e, com `socio`, uma resposta socioeconômica de cada
+    matrícula -- sem ela o aluno não é integrado e some de /crg-semestres."""
     with Session(db_engine) as s:
         for matricula, semestre, crg in linhas:
             s.add(CrgSemestre(matricula=matricula, semestre=semestre, crg=crg, ingestao_id=ingestao_id))
+        if socio:
+            for matricula in {m for m, _, _ in linhas}:
+                s.add(Usuarios(matricula=matricula, periodo="2026.1", ingestao_id=ingestao_id))
         s.commit()
 
 
@@ -57,7 +62,7 @@ async def test_segunda_ingestao_substitui_o_semestre_em_vez_de_duplicar(client, 
     antiga = await _ingestao(db_engine, lote, passo=2)
     await _gravar(db_engine, antiga, [(202016040011, "2024.1", 6.0)])
     nova = await _ingestao(db_engine, lote, passo=3)
-    await _gravar(db_engine, nova, [(202016040011, "2024.1", 9.0)])
+    await _gravar(db_engine, nova, [(202016040011, "2024.1", 9.0)], socio=False)
 
     corpo = (await client.get("/crg-semestres")).json()
     assert len(corpo) == 1
@@ -71,6 +76,16 @@ async def test_varios_alunos_saem_agrupados_por_matricula(client, db_engine, lot
     assert [(p["matricula"], p["semestre"]) for p in corpo] == [
         (202016040011, "2024.1"), (202016040011, "2024.2"), (202285640003, "2024.1"),
     ]
+
+
+async def test_historico_sem_socioeconomico_nao_entra_na_trajetoria(client, db_engine, lote):
+    """Só alunos integrados: quem tem histórico e não respondeu o FasiTech
+    não compõe gráfico nenhum."""
+    i = await _ingestao(db_engine, lote)
+    await _gravar(db_engine, i, [(202016040011, "2024.1", 7.0)])
+    await _gravar(db_engine, i, [(202285640003, "2024.1", 5.0)], socio=False)
+    corpo = (await client.get("/crg-semestres")).json()
+    assert {p["matricula"] for p in corpo} == {202016040011}
 
 
 async def test_view_existe_no_banco(db_engine):

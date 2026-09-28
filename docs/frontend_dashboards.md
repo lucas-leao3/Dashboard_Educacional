@@ -30,7 +30,7 @@ O eixo do longitudinal é o **semestre letivo**, não o período de coleta — v
 
 Sempre **`Nome · matrícula`**, em toda tela, por `domain/aluno.ts`. Quem não tem nome aparece como **`— · matrícula`**.
 
-O nome **não vem do FasiTech** (a API não devolve esse campo): ele é lido do histórico em PDF, no passo 2 do lote. Como só parte da base tem PDF — hoje 56 de 111 alunos —, metade tem nome e metade não. Antes cada tela resolvia isso sozinha com `nome ?? "Matrícula X"`, e a grade saía meio com nome e meio com número, parecendo defeito da interface quando era a cobertura dos PDFs aparecendo.
+O nome **não vem do FasiTech** (a API não devolve esse campo): ele é lido do histórico em PDF, no passo 2 do lote. Até 25/09/2026 só parte da base tinha PDF — 56 de 111 alunos —, e metade aparecia com nome e metade sem; desde a governança simplificada os dashboards só mostram integrados (todos com histórico), mas o marcador continua para PDF sem nome legível e para as tabelas de relatório. Antes cada tela resolvia isso sozinha com `nome ?? "Matrícula X"`, e a grade saía meio com nome e meio com número, parecendo defeito da interface quando era a cobertura dos PDFs aparecendo.
 
 Duas decisões dentro disso:
 
@@ -39,7 +39,7 @@ Duas decisões dentro disso:
 
 **Em duas linhas, nome em cima e matrícula embaixo** (`components/ui/IdentificacaoAluno.tsx`). Numa linha só (`Nome · matrícula`) o `truncate` do card comia justamente a matrícula — "Andrey Azevedo do Carmo · 20…" —, que é o identificador estável e o que nunca deveria sumir. Empilhado, o nome pode truncar à vontade e os 12 dígitos cabem sempre. No Perfil o `<h1>` também trunca, então lá o nome fica no título e a matrícula abre o subtítulo.
 
-A tabela de cobertura do lote (`/dados`) é a exceção deliberada: lá matrícula e nome já são colunas separadas, então não se repete a identificação — só o mesmo `—` quando falta.
+As tabelas dos relatórios do lote (`/dados`) são a exceção deliberada: lá matrícula e nome já são colunas separadas, então não se repete a identificação — só o mesmo `—` quando falta.
 
 ### Busca do cabeçalho
 
@@ -47,7 +47,7 @@ Casa por **trecho** do nome ou da matrícula, sem caixa e sem acento (`domain/bu
 
 Antes era igualdade exata contra o nome cru. Como a tela passou a mostrar o nome capitalizado, copiar o que estava na tela e colar na busca não encontrava nada.
 | `/aluno/:matricula` | Perfil individual: 4 dimensões detalhadas + trajetória por dimensão | 6, 7 |
-| `/dados` | Inserção de lote (abrir → enviar PDFs e rodar → conferir e fechar) + cobertura do lote (correspondência por matrícula) | spec `2026-09-18-tela-dados-lote-design.md` |
+| `/dados` | Importação (responsável + `.zip`; o lote termina fechado) + relatórios do lote: não integrados (com motivo) e integrados, ambos com campos sem resposta e % de preenchimento | `docs/governanca_simplificada.md` |
 | `/analises/*` | Gráficos agregados do dashboard anterior (Bidimensional, Distribuição, Longitudinal) | — |
 
 Filtros globais no cabeçalho: **Período** (item 9) e **busca por matrícula** (complementar, item 3).
@@ -92,10 +92,13 @@ Na trajetória longitudinal (item 7), a dimensão acadêmica plota o CRG; as dem
 - A trajetória usa os registros por período do FasiTech. O CRG por semestre do SIGAA
   (`crg_semestre`) ainda não tem endpoint; quando houver, basta alimentar
   `trajetoriaPorDimensao('academica')` com essa série.
-- A tela `/dados` é a única que **escreve** na API (`POST /lotes`, `POST /lotes/{id}/historicos?executar=true`,
-  `POST /lotes/{id}/fechar`) e lê `GET /lotes/{id}/correspondencia`. Sem API ela mostra só um aviso.
-  Depois de cada ação, `recarregar()` do `DadosProvider` atualiza o dashboard inteiro.
-  Para um lote fechado que não é mais o vigente (já existe um lote mais recente), a cobertura mostrada pode não coincidir mais com o `correspondencia.csv` congelado no fechamento — `GET /lotes/{id}/correspondencia` sempre lê o estado vigente atual, não um retrato histórico do lote consultado.
+- A tela `/dados` é a única que **escreve** na API (`POST /lotes/importar`) e lê
+  `GET /lotes/{id}/relatorio`. Sem API ela mostra só um aviso.
+- `GET /alunos` e `GET /crg-semestres` só devolvem alunos **integrados** (acadêmico + socioeconômico): todo
+  KPI, total e gráfico das telas Polos, Turmas, Alunos, Perfil e Análises conta só eles.
+  Depois de uma importação, `recarregar()` do `DadosProvider` atualiza o dashboard inteiro.
+  O relatório de um lote antigo é o retrato de quando ele fechou (base consolidada até a última ingestão
+  dele) e coincide com os CSVs congelados no fechamento; o do lote mais recente coincide com o dashboard.
 
 ## Comandos
 

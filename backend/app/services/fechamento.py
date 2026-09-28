@@ -1,10 +1,10 @@
-"""Fechar um lote (docs/governanca_dados.md, seções 3.3 e 5): selar os
-insumos com SHA256SUMS e lote.md em raw/lotes/<id>/, gerar os derivados
-vigente.csv e correspondencia.csv em processed/<id>/, e carimbar
-lote.fechado_em. Depois disso o lote não recebe insumo nem se reabre.
+"""Fechar um lote (docs/governanca_simplificada.md): selar os insumos com
+SHA256SUMS e lote.md em raw/lotes/<id>/, gerar os derivados vigente.csv,
+integrados.csv e nao_integrados.csv em processed/<id>/, e carimbar
+lote.fechado_em. Depois disso o lote é imutável.
 
-Era o `fechar` de scripts/lote.py; veio para a API para que uma interface
-consiga fechar um lote sem depender de script no host."""
+Não é mais uma ação do usuário: é a última etapa da importação
+(app.services.importacao), na mesma transação que gravou os dados."""
 import csv
 from datetime import datetime, timezone
 from pathlib import Path
@@ -18,6 +18,7 @@ from app.db.engine import Excecao, Ingestao, Lote
 from app.db.vigente import aluno_vigente
 from app.schemas.alunos import AlunoOut
 from app.services.lotes import caminho_do_lote, sha256_de
+from app.services.relatorio import MOTIVOS, relatorio_do_lote
 
 PASSOS_OBRIGATORIOS = {Ingestao.PASSO_SINCRONIZAR, Ingestao.PASSO_CRG}
 
@@ -52,15 +53,23 @@ def _gerar_sha256sums(raiz: Path) -> list[tuple[str, str]]:
 
 def _escrever_lote_md(
     raiz: Path, lote: Lote, ingestoes: list[Ingestao], excecoes_por_motivo: dict[str, int],
-    arquivos: list[tuple[str, str]],
+    arquivos: list[tuple[str, str]], resumo: dict,
 ) -> None:
     linhas = [f"# Lote {lote.id}", ""]
-    linhas.append(f"- Períodos cobertos: {', '.join(lote.periodos_cobertos.split(';'))}")
-    linhas.append(f"- Executado por: {lote.executado_por or 'não informado'}")
+    linhas.append(f"- Responsável: {lote.executado_por or 'não informado'}")
+    linhas.append(f"- Período (extraído dos históricos): {', '.join(lote.periodos_cobertos.split(';'))}")
     linhas.append(f"- Executado em: {lote.executado_em.isoformat()}")
     if lote.observacao:
         linhas.append(f"- Observação: {lote.observacao}")
     linhas.append("")
+
+    linhas += ["## Integração", "", "| Situação | Alunos |", "|---|---|"]
+    linhas.append(f"| Integrados (acadêmico + socioeconômico) | {resumo['integrados']} |")
+    for codigo, n in sorted(resumo["por_motivo"].items()):
+        linhas.append(f"| Não integrado: {MOTIVOS[codigo]} | {n} |")
+    media = resumo["preenchimento_medio_integrados"]
+    linhas += ["", f"Preenchimento médio dos integrados: {'—' if media is None else f'{media}%'}.",
+               "Só os integrados entram nos dashboards.", ""]
 
     linhas += ["## Ingestões", "", "| Passo | Executado em | Lidos | Aceitos | Rejeitados |", "|---|---|---|---|---|"]
     for i in ingestoes:
@@ -94,83 +103,58 @@ def _escrever_vigente_csv(caminho: Path, alunos: list[AlunoOut]) -> None:
             escritor.writerow(aluno.model_dump())
 
 
-def correspondencia(alunos: list[AlunoOut], excecoes: list[Excecao]) -> list[dict]:
-    """Uma linha por matrícula: tem acadêmico? tem socioeconômico? O que falta?
-    Quem está em aluno_vigente tem os dois, salvo exceção que diga o contrário.
-    É a fonte tanto do correspondencia.csv quanto de GET /lotes/{id}/correspondencia."""
-    info: dict[int, dict] = {}
-    for aluno in alunos:
-        registro = info.setdefault(aluno.matricula, {"nome": None, "academico": True, "socio": True})
-        if aluno.nome:
-            registro["nome"] = aluno.nome
-    for excecao in excecoes:
-        if excecao.matricula is None:
-            continue
-        registro = info.setdefault(excecao.matricula, {"nome": None, "academico": True, "socio": True})
-        if excecao.motivo == "sem_academico":
-            registro["academico"] = False
-        elif excecao.motivo == "sem_socioeconomico":
-            registro["socio"] = False
-
-    linhas = []
-    for matricula in sorted(info):
-        registro = info[matricula]
-        academico_ok, socio_ok = registro["academico"], registro["socio"]
-        if academico_ok and socio_ok:
-            faltando = ""
-        elif not academico_ok and not socio_ok:
-            faltando = "Ambos"
-        elif not academico_ok:
-            faltando = "Academico"
-        else:
-            faltando = "SocioEconomico"
-        linhas.append({
-            "matricula": matricula, "nome": registro["nome"],
-            "academico": academico_ok, "socioeconomico": socio_ok, "faltando": faltando,
-        })
-    return linhas
+def _lista_campos(linha: dict) -> str:
+    return "; ".join(linha["campos_sem_resposta"]) or "nenhum"
 
 
-def _escrever_correspondencia_csv(caminho: Path, linhas: list[dict]) -> None:
+def _percentual(linha: dict) -> str:
+    return "" if linha["percentual_preenchimento"] is None else str(linha["percentual_preenchimento"])
+
+
+def _escrever_integrados_csv(caminho: Path, linhas: list[dict]) -> None:
     with open(caminho, "w", newline="", encoding="utf-8") as f:
         escritor = csv.writer(f)
-        escritor.writerow(["Matricula", "Nome", "Academico", "SocioEconomico", "Dado_Faltando"])
+        escritor.writerow(["Matricula", "Nome", "Academico", "SocioEconomico", "Status",
+                           "Qtd_campos_sem_resposta", "Campos_sem_resposta", "Percentual_preenchimento"])
+        for l in linhas:
+            escritor.writerow([l["matricula"], l["nome"] or "", "Sim", "Sim", l["status"],
+                               l["qtd_campos_sem_resposta"], _lista_campos(l), _percentual(l)])
+
+
+def _escrever_nao_integrados_csv(caminho: Path, linhas: list[dict]) -> None:
+    with open(caminho, "w", newline="", encoding="utf-8") as f:
+        escritor = csv.writer(f)
+        escritor.writerow(["Matricula", "Nome", "Academico", "SocioEconomico", "Motivo", "Detalhe",
+                           "Qtd_campos_sem_resposta", "Campos_sem_resposta", "Percentual_preenchimento"])
         for l in linhas:
             escritor.writerow([
-                l["matricula"], l["nome"] or "",
-                "Sim" if l["academico"] else "Não", "Sim" if l["socioeconomico"] else "Não", l["faltando"],
+                "" if l["matricula"] is None else l["matricula"], l["nome"] or "",
+                "Sim" if l["academico"] else "Não", "Sim" if l["socioeconomico"] else "Não",
+                l["motivo_descricao"], l["detalhe"] or "",
+                l["qtd_campos_sem_resposta"], _lista_campos(l), _percentual(l),
             ])
 
 
-def _alunos_e_excecoes(session: Session, lote_id: str) -> tuple[list[AlunoOut], list[Excecao]]:
-    excecoes = session.execute(
-        select(Excecao).join(Ingestao, Ingestao.id == Excecao.ingestao_id).where(Ingestao.lote_id == lote_id)
-    ).scalars().all()
-    alunos = [
+def _alunos_vigentes(session: Session) -> list[AlunoOut]:
+    return [
         AlunoOut.model_validate(linha)
         for linha in session.execute(
             select(aluno_vigente).order_by(aluno_vigente.c.matricula, aluno_vigente.c.periodo)
         ).all()
     ]
-    return alunos, list(excecoes)
-
-
-def correspondencia_do_lote(session: Session, lote_id: str) -> list[dict]:
-    alunos, excecoes = _alunos_e_excecoes(session, lote_id)
-    return correspondencia(alunos, excecoes)
 
 
 def exigir_aberto(lote: Lote) -> None:
     if lote.fechado_em is not None:
         raise HTTPException(
             status_code=409,
-            detail=f"Lote '{lote.id}' está fechado desde {lote.fechado_em.isoformat()}. Lote fechado não se reabre; abra outro.",
+            detail=f"Lote '{lote.id}' está fechado desde {lote.fechado_em.isoformat()}. Lote fechado não se altera; faça uma nova importação.",
         )
 
 
 def fechar_lote(session: Session, lote: Lote) -> list[Path]:
     """Sela o lote e devolve os caminhos gerados, na ordem: SHA256SUMS,
-    lote.md, vigente.csv, correspondencia.csv."""
+    lote.md, vigente.csv, integrados.csv, nao_integrados.csv."""
     exigir_aberto(lote)
     ingestoes = session.execute(
         select(Ingestao).where(Ingestao.lote_id == lote.id).order_by(Ingestao.passo)
@@ -188,18 +172,22 @@ def fechar_lote(session: Session, lote: Lote) -> list[Path]:
         .where(Ingestao.lote_id == lote.id)
         .group_by(Excecao.motivo)
     ).all())
-    alunos, excecoes = _alunos_e_excecoes(session, lote.id)
+    relatorio = relatorio_do_lote(session, lote.id)
 
     raiz = caminho_do_lote(lote.id)
     arquivos = _gerar_sha256sums(raiz)
-    _escrever_lote_md(raiz, lote, ingestoes, por_motivo, arquivos)
+    _escrever_lote_md(raiz, lote, ingestoes, por_motivo, arquivos, relatorio["resumo"])
 
     processada = caminho_processado(lote.id)
     processada.mkdir(parents=True, exist_ok=True)
-    _escrever_vigente_csv(processada / "vigente.csv", alunos)
-    _escrever_correspondencia_csv(processada / "correspondencia.csv", correspondencia(alunos, excecoes))
+    _escrever_vigente_csv(processada / "vigente.csv", _alunos_vigentes(session))
+    _escrever_integrados_csv(processada / "integrados.csv", relatorio["integrados"])
+    _escrever_nao_integrados_csv(processada / "nao_integrados.csv", relatorio["nao_integrados"])
 
     lote.fechado_em = datetime.now(timezone.utc)
     session.commit()
     session.refresh(lote)  # a resposta mostra o que o banco guardou, não o objeto em memória
-    return [raiz / "SHA256SUMS", raiz / "lote.md", processada / "vigente.csv", processada / "correspondencia.csv"]
+    return [
+        raiz / "SHA256SUMS", raiz / "lote.md", processada / "vigente.csv",
+        processada / "integrados.csv", processada / "nao_integrados.csv",
+    ]

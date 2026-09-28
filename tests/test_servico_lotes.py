@@ -1,7 +1,9 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from fastapi import HTTPException
+from datetime import date
+
 import pytest
+from sqlalchemy.exc import IntegrityError
 
 from app.core import config
 from app.db.engine import ArquivoFonte, Excecao, Ingestao, Lote
@@ -37,13 +39,6 @@ def test_registrar_arquivo_grava_hash_e_detecta_duplicado(sessao, tmp_path):
     assert lotes.registrar_arquivo(sessao, "L01", arquivo, "pdf_historico") is None
 
 
-def test_exigir_lote_inexistente_da_400(sessao):
-    assert lotes.exigir_lote(sessao, "L01").id == "L01"
-    with pytest.raises(HTTPException) as erro:
-        lotes.exigir_lote(sessao, "L99")
-    assert erro.value.status_code == 400
-
-
 def test_abrir_e_fechar_ingestao(sessao):
     ingestao = lotes.abrir_ingestao(sessao, "L01", Ingestao.PASSO_SINCRONIZAR)
     lotes.fechar_ingestao(sessao, ingestao, lidos=3, aceitos=2, rejeitados=1)
@@ -51,25 +46,25 @@ def test_abrir_e_fechar_ingestao(sessao):
     assert (gravada.registros_lidos, gravada.registros_aceitos, gravada.registros_rejeitados) == (3, 2, 1)
 
 
-def test_abrir_ingestao_manual_reaproveita(sessao):
-    a = lotes.abrir_ingestao(sessao, "L01", Ingestao.PASSO_MANUAL)
-    b = lotes.abrir_ingestao(sessao, "L01", Ingestao.PASSO_MANUAL)
-    assert a.id == b.id
-
-
-def test_abrir_ingestao_repetida_do_mesmo_passo_da_409(sessao):
+def test_abrir_ingestao_repetida_do_mesmo_passo_e_recusada_pelo_banco(sessao):
     lotes.abrir_ingestao(sessao, "L01", Ingestao.PASSO_CRG)
-    with pytest.raises(HTTPException) as erro:
+    with pytest.raises(IntegrityError):
         lotes.abrir_ingestao(sessao, "L01", Ingestao.PASSO_CRG)
-    assert erro.value.status_code == 409
 
 
-def test_exigir_passo_livre(sessao):
-    assert lotes.exigir_passo_livre(sessao, "L01", Ingestao.PASSO_CRG) is None
-    lotes.abrir_ingestao(sessao, "L01", Ingestao.PASSO_CRG)
-    with pytest.raises(HTTPException) as erro:
-        lotes.exigir_passo_livre(sessao, "L01", Ingestao.PASSO_CRG)
-    assert erro.value.status_code == 409
+def test_proximo_id_segue_a_sequencia_do_mes(sessao):
+    assert lotes.proximo_id(sessao, date(2026, 10, 3)) == "2026-10-L01"
+    sessao.add(Lote(id="2026-10-L01", periodos_cobertos="2026.2"))
+    sessao.add(Lote(id="2026-10-L02", periodos_cobertos="2026.2"))
+    sessao.add(Lote(id="2026-11-L05", periodos_cobertos="2026.2"))
+    sessao.commit()
+    assert lotes.proximo_id(sessao, date(2026, 10, 30)) == "2026-10-L03"
+    assert lotes.proximo_id(sessao, date(2026, 11, 1)) == "2026-11-L06"
+
+
+def test_proximo_id_considera_pasta_orfa_em_disco(sessao):
+    (config.RAIZ_LOTES / "2026-10-L04").mkdir(parents=True)
+    assert lotes.proximo_id(sessao, date(2026, 10, 3)) == "2026-10-L05"
 
 
 def test_registrar_excecao(sessao):

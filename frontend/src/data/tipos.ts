@@ -55,9 +55,11 @@ export interface Ingestao {
 export interface Lote {
   id: string;
   executado_em: string;
-  /** Preenchido por POST /lotes/{id}/fechar. Fechado não se reabre. */
+  /** Carimbado no fim da importação. Lote fechado é imutável. */
   fechado_em: string | null;
+  /** Extraídos dos históricos (semestre letivo da data de emissão), nunca digitados. */
   periodos_cobertos: string[];
+  /** O responsável pela importação. */
   executado_por: string | null;
   observacao: string | null;
   ingestoes: Ingestao[];
@@ -84,22 +86,55 @@ export type DimensaoId = 'academica' | 'socioeconomica' | 'saude_mental' | 'infr
 export const SEM_TURMA = 'Sem turma informada';
 export const SEM_POLO = 'Sem polo informado';
 
-/** Espelha `HistoricosOut` (backend/app/schemas/lotes.py). */
-export interface HistoricosOut {
-  lote: string;
-  gravados: string[];
-  ja_existiam: string[];
-  ignorados: string[];
-  /** Contadores do passo, "ja_executado" se já tinha rodado, null se não se pediu ?executar. */
-  sincronizar: Record<string, unknown> | 'ja_executado' | null;
-  atualizar_crg: Record<string, unknown> | 'ja_executado' | null;
+/** Espelha `ResumoRelatorio` (backend/app/schemas/lotes.py). */
+export interface ResumoRelatorio {
+  total: number;
+  integrados: number;
+  nao_integrados: number;
+  /** Não integrados por código de motivo. */
+  por_motivo: Record<string, number>;
+  preenchimento_medio_integrados: number | null;
 }
 
-/** Espelha `CorrespondenciaOut`: uma linha por matrícula. */
-export interface Correspondencia {
-  matricula: number;
+/** Espelha `ImportacaoOut`: o lote já fechado e o que a importação fez. */
+export interface ImportacaoOut extends Lote {
+  arquivos: { gravados: string[]; ja_existiam: string[]; ignorados: string[] };
+  sincronizar: Record<string, unknown>;
+  atualizar_crg: Record<string, unknown>;
+  arquivos_gerados: string[];
+  resumo: ResumoRelatorio;
+}
+
+/** Espelha `LinhaRelatorio`: identificação, fontes e completude do registro. */
+export interface LinhaRelatorio {
+  /** null = registro sem matrícula utilizável (falha de identificação). */
+  matricula: number | null;
   nome: string | null;
   academico: boolean;
   socioeconomico: boolean;
-  faltando: '' | 'Academico' | 'SocioEconomico' | 'Ambos';
+  campos_avaliados: number;
+  qtd_campos_sem_resposta: number;
+  campos_sem_resposta: string[];
+  /** 0-100; null quando não há campo a avaliar. */
+  percentual_preenchimento: number | null;
+}
+
+export interface LinhaIntegrada extends LinhaRelatorio {
+  status: string;
+}
+
+export type MotivoNaoIntegrado = 'sem_academico' | 'sem_socioeconomico' | 'falha_identificacao' | 'matricula_nao_encontrada';
+
+export interface LinhaNaoIntegrada extends LinhaRelatorio {
+  motivo: MotivoNaoIntegrado;
+  motivo_descricao: string;
+  detalhe: string | null;
+}
+
+/** Espelha `RelatorioOut` (GET /lotes/{id}/relatorio). */
+export interface Relatorio {
+  lote: string;
+  resumo: ResumoRelatorio;
+  integrados: LinhaIntegrada[];
+  nao_integrados: LinhaNaoIntegrada[];
 }

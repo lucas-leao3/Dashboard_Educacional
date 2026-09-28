@@ -1,16 +1,6 @@
 from datetime import datetime
 
-from typing import Literal
-
-from pydantic import BaseModel, ConfigDict, Field
-
-
-class LoteCreate(BaseModel):
-    # Também é nome de pasta em raw/lotes/: só letras, dígitos, '-' e '_'.
-    id: str = Field(pattern=r"^[A-Za-z0-9_-]{3,20}$", examples=["2026-09-L01"])
-    periodos_cobertos: list[str] = Field(min_length=1, examples=[["2025.2", "2026.1"]])
-    executado_por: str | None = None
-    observacao: str | None = None
+from pydantic import BaseModel, ConfigDict
 
 
 class IngestaoOut(BaseModel):
@@ -29,15 +19,13 @@ class LoteOut(BaseModel):
     id: str
     executado_em: datetime
     fechado_em: datetime | None
+    #: Extraídos dos históricos (semestre letivo da data de emissão).
     periodos_cobertos: list[str]
+    #: O responsável pela importação.
     executado_por: str | None
     observacao: str | None
     ingestoes: list[IngestaoOut]
     excecoes_por_motivo: dict[str, int]
-
-
-class FechamentoOut(LoteOut):
-    arquivos_gerados: list[str]
 
 
 class ExcecaoOut(BaseModel):
@@ -49,20 +37,59 @@ class ExcecaoOut(BaseModel):
     detalhe: str | None
 
 
-class HistoricosOut(BaseModel):
-    lote: str
+class ArquivosImportados(BaseModel):
     gravados: list[str]
     ja_existiam: list[str]
     ignorados: list[str]
-    # Só com ?executar=true: contadores de cada passo, ou "ja_executado" se
-    # o passo já tinha rodado neste lote. None quando não se pediu para rodar.
-    sincronizar: dict | Literal["ja_executado"] | None = None
-    atualizar_crg: dict | Literal["ja_executado"] | None = None
 
 
-class CorrespondenciaOut(BaseModel):
-    matricula: int
+class ResumoRelatorio(BaseModel):
+    total: int
+    integrados: int
+    nao_integrados: int
+    #: Não integrados por código de motivo (ver LinhaNaoIntegrada.motivo).
+    por_motivo: dict[str, int]
+    preenchimento_medio_integrados: float | None
+
+
+class ImportacaoOut(LoteOut):
+    """Resposta de POST /lotes/importar: o lote já fechado, mais o que a
+    execução fez (arquivos do .zip, contadores de cada passo, arquivos
+    gerados no fechamento) e o resumo dos relatórios."""
+    arquivos: ArquivosImportados
+    sincronizar: dict
+    atualizar_crg: dict
+    arquivos_gerados: list[str]
+    resumo: ResumoRelatorio
+
+
+class LinhaRelatorio(BaseModel):
+    matricula: int | None
     nome: str | None
     academico: bool
     socioeconomico: bool
-    faltando: Literal["", "Academico", "SocioEconomico", "Ambos"]
+    #: Campos das fontes que o registro tem (CRG se tem acadêmico; os do
+    #: questionário se tem socioeconômico; tipo_deficiencia só se pcd = Sim).
+    campos_avaliados: int
+    qtd_campos_sem_resposta: int
+    campos_sem_resposta: list[str]
+    #: 0-100; null quando não há campo a avaliar (registro sem matrícula).
+    percentual_preenchimento: float | None
+
+
+class LinhaIntegrada(LinhaRelatorio):
+    status: str                    # "Integrado com sucesso"
+
+
+class LinhaNaoIntegrada(LinhaRelatorio):
+    #: sem_academico | sem_socioeconomico | falha_identificacao | matricula_nao_encontrada
+    motivo: str
+    motivo_descricao: str
+    detalhe: str | None
+
+
+class RelatorioOut(BaseModel):
+    lote: str
+    resumo: ResumoRelatorio
+    integrados: list[LinhaIntegrada]
+    nao_integrados: list[LinhaNaoIntegrada]

@@ -89,3 +89,28 @@ crg_semestre_vigente = Table(
     MetaData(),
     *[Column(c.name, c.type) for c in CrgSemestre.__table__.columns],
 )
+
+
+# ---------------------------------------------------------------------------
+# aluno_integrado: a base dos dashboards (docs/governanca_simplificada.md).
+# `aluno_vigente` restrita a quem passou pelo cruzamento -- tem socioeconômico
+# (linha em usuarios) E acadêmico (CRG por semestre lido de um histórico).
+# Quem tem só uma das fontes fica fora de KPI, gráfico e total; aparece no
+# relatório de não integrados (app.services.relatorio), com o motivo.
+#
+# O critério acadêmico é crg_semestre, e não a tabela historico, porque o
+# lote L01 é anterior a ela e tem os semestres gravados.
+# ---------------------------------------------------------------------------
+
+VIEW_INTEGRADO_SQL = """
+CREATE VIEW aluno_integrado AS
+SELECT av.*
+FROM aluno_vigente av
+WHERE EXISTS (SELECT 1 FROM crg_semestre c WHERE c.matricula = av.matricula)
+"""
+
+aluno_integrado = Table(
+    "aluno_integrado",
+    MetaData(),
+    *[Column(c.name, c.type) for c in aluno_vigente.columns],
+)

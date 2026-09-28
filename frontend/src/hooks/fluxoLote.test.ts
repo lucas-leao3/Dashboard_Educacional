@@ -1,50 +1,45 @@
 import { describe, expect, test } from 'vitest';
 import { ErroApi } from '../data/api';
-import type { Lote } from '../data/tipos';
+import type { ImportacaoOut } from '../data/tipos';
 import { criarFluxoLote } from './fluxoLote';
 import type { ApiLote } from './fluxoLote';
 
-const LOTE: Lote = {
-  id: '2026-09-L01', executado_em: '2026-09-12T10:00:00Z', fechado_em: null, periodos_cobertos: ['2026.1'],
-  executado_por: null, observacao: null, ingestoes: [], excecoes_por_motivo: {},
+const SAIDA: ImportacaoOut = {
+  id: '2026-09-L02', executado_em: '2026-09-25T10:00:00Z', fechado_em: '2026-09-25T10:01:00Z', periodos_cobertos: ['2025.2'],
+  executado_por: 'Edinaldo', observacao: null, ingestoes: [], excecoes_por_motivo: {},
+  arquivos: { gravados: ['a.pdf'], ja_existiam: [], ignorados: [] }, sincronizar: {}, atualizar_crg: {}, arquivos_gerados: [],
+  resumo: { total: 1, integrados: 1, nao_integrados: 0, por_motivo: {}, preenchimento_medio_integrados: 100 },
 };
-const SAIDA = { lote: '2026-09-L01', gravados: ['a.pdf'], ja_existiam: [], ignorados: [], sincronizar: null, atualizar_crg: null };
+const ZIP = new File(['PK'], 'historicos.zip');
 
-function apiFalsa(sobrescrever: Partial<ApiLote> = {}): ApiLote & { chamadas: string[] } {
-  const chamadas: string[] = [];
-  return {
-    chamadas,
-    abrirLote: async () => { chamadas.push('abrir'); return LOTE; },
-    enviarHistoricos: async () => { chamadas.push('enviar'); return SAIDA; },
-    fecharLote: async () => { chamadas.push('fechar'); return { ...LOTE, fechado_em: '2026-09-12T11:00:00Z' }; },
-    ...sobrescrever,
-  };
+function apiFalsa(importarLote: ApiLote['importarLote'] = async () => SAIDA) {
+  const chamadas: [string, string][] = [];
+  const api: ApiLote = { importarLote: async (r, a) => { chamadas.push([r, a.name]); return importarLote(r, a); } };
+  return { api, chamadas };
 }
 
 describe('criarFluxoLote', () => {
-  test('caso feliz: cada ação chama recarregar depois de dar certo', async () => {
-    const api = apiFalsa();
+  test('caso feliz: importa com o responsável sem espaços e recarrega', async () => {
+    const { api, chamadas } = apiFalsa();
     let recarregado = 0;
     const fluxo = criarFluxoLote({ api, recarregar: async () => { recarregado++; }, confirmar: () => true });
-    expect(await fluxo.abrir({ id: LOTE.id, periodos_cobertos: ['2026.1'], executado_por: null })).toEqual({ ok: true, dados: LOTE });
-    expect(await fluxo.enviar(LOTE.id, [new File(['x'], 'a.pdf')])).toEqual({ ok: true, dados: SAIDA });
-    expect((await fluxo.fechar(LOTE.id)).ok).toBe(true);
-    expect(recarregado).toBe(3);
-    expect(api.chamadas).toEqual(['abrir', 'enviar', 'fechar']);
+    expect(await fluxo.importar('  Edinaldo ', ZIP)).toEqual({ ok: true, dados: SAIDA });
+    expect(chamadas).toEqual([['Edinaldo', 'historicos.zip']]);
+    expect(recarregado).toBe(1);
   });
 
   test('erro da API vira { ok: false, erro: detail, status } e não recarrega', async () => {
-    const api = apiFalsa({ enviarHistoricos: async () => { throw new ErroApi(409, 'Passo 2 já foi executado'); } });
+    const { api } = apiFalsa(async () => { throw new ErroApi(502, 'FasiTech fora do ar'); });
     let recarregado = 0;
-    const fluxo = criarFluxoLote({ api, recarregar: async () => { recarregado++; } });
-    expect(await fluxo.enviar(LOTE.id, [])).toEqual({ ok: false, erro: 'Passo 2 já foi executado', status: 409 });
+    const fluxo = criarFluxoLote({ api, recarregar: async () => { recarregado++; }, confirmar: () => true });
+    expect(await fluxo.importar('Edi', ZIP)).toEqual({ ok: false, erro: 'FasiTech fora do ar', status: 502 });
     expect(recarregado).toBe(0);
   });
 
-  test('fechar sem confirmação não chama a API', async () => {
-    const api = apiFalsa();
+  test('sem confirmação não chama a API', async () => {
+    const { api, chamadas } = apiFalsa();
     const fluxo = criarFluxoLote({ api, recarregar: async () => {}, confirmar: () => false });
-    expect(await fluxo.fechar(LOTE.id)).toEqual({ ok: false, erro: null, status: 0 });
-    expect(api.chamadas).toEqual([]);
+    expect(await fluxo.importar('Edi', ZIP)).toEqual({ ok: false, erro: null, status: 0 });
+    expect(chamadas).toEqual([]);
   });
 });

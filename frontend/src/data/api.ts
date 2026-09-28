@@ -1,5 +1,5 @@
 import { crgSemestresDemonstracao, registrosDemonstracao } from './mockData';
-import type { Correspondencia, CrgSemestre, HistoricosOut, Lote, Registro } from './tipos';
+import type { CrgSemestre, ImportacaoOut, Lote, Registro, Relatorio } from './tipos';
 
 export type Origem = 'api' | 'demonstracao';
 
@@ -15,7 +15,8 @@ interface Opcoes {
 }
 
 /**
- * Busca GET {baseUrl}/alunos (o vigente de cada matrícula×período). Se a API
+ * Busca GET {baseUrl}/alunos (o vigente de cada matrícula×período, só dos
+ * alunos integrados -- acadêmico + socioeconômico). Se a API
  * não estiver configurada ou falhar, devolve o dataset de demonstração e
  * marca a origem, para a UI avisar que não são dados reais.
  */
@@ -81,12 +82,6 @@ export class ErroApi extends Error {
   }
 }
 
-export interface NovoLote {
-  id: string;
-  periodos_cobertos: string[];
-  executado_por: string | null;
-}
-
 /**
  * Chamada que NÃO cai em demonstração: escrever sem API é erro. Erro HTTP vira
  * ErroApi com o `detail` do corpo; fetch rejeitado vira "Sem resposta da API".
@@ -113,24 +108,18 @@ async function chamar(caminho: string, init: RequestInit, opcoes: Opcoes): Promi
   return (await resposta.json()) as unknown;
 }
 
-export function abrirLote(dados: NovoLote, opcoes: Opcoes = {}): Promise<Lote> {
-  return chamar('/lotes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(dados) }, opcoes) as Promise<Lote>;
-}
-
-export function enviarHistoricos(id: string, arquivos: File[], opcoes: Opcoes = {}): Promise<HistoricosOut> {
+/**
+ * POST /lotes/importar: o responsável e o .zip dos históricos -- a única
+ * entrada de dados. A API cria o lote, extrai o período dos históricos,
+ * processa e fecha; se algo falhar, não grava nada.
+ */
+export function importarLote(responsavel: string, arquivo: File, opcoes: Opcoes = {}): Promise<ImportacaoOut> {
   const form = new FormData();
-  for (const arquivo of arquivos) form.append('arquivos', arquivo, arquivo.name);
-  return chamar(`/lotes/${encodeURIComponent(id)}/historicos?executar=true`, { method: 'POST', body: form }, opcoes) as Promise<HistoricosOut>;
+  form.append('responsavel', responsavel);
+  form.append('arquivo', arquivo, arquivo.name);
+  return chamar('/lotes/importar', { method: 'POST', body: form }, opcoes) as Promise<ImportacaoOut>;
 }
 
-export function fecharLote(id: string, opcoes: Opcoes = {}): Promise<Lote> {
-  return chamar(`/lotes/${encodeURIComponent(id)}/fechar`, { method: 'POST' }, opcoes) as Promise<Lote>;
-}
-
-export function carregarLote(id: string, opcoes: Opcoes = {}): Promise<Lote> {
-  return chamar(`/lotes/${encodeURIComponent(id)}`, {}, opcoes) as Promise<Lote>;
-}
-
-export function carregarCorrespondencia(id: string, opcoes: Opcoes = {}): Promise<Correspondencia[]> {
-  return chamar(`/lotes/${encodeURIComponent(id)}/correspondencia`, {}, opcoes) as Promise<Correspondencia[]>;
+export function carregarRelatorio(id: string, opcoes: Opcoes = {}): Promise<Relatorio> {
+  return chamar(`/lotes/${encodeURIComponent(id)}/relatorio`, {}, opcoes) as Promise<Relatorio>;
 }

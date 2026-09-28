@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.db.engine import Base, CrgSemestre, Ingestao, Lote, Usuarios
 from app.db.migracoes import aplicar_migracoes
-from app.db.vigente import aluno_vigente
+from app.db.vigente import aluno_integrado, aluno_vigente
 
 
 # O banco vem do fixture `db_engine` (tests/conftest.py): um PostgreSQL
@@ -18,8 +18,8 @@ from app.db.vigente import aluno_vigente
 
 async def test_migracoes_criam_tabelas_e_view(db_engine):
     inspector = inspect(db_engine)
-    assert {"lote", "arquivo_fonte", "ingestao", "excecao", "crg_semestre", "usuarios", "polo"} <= set(inspector.get_table_names())
-    assert "aluno_vigente" in inspector.get_view_names()
+    assert {"lote", "arquivo_fonte", "ingestao", "excecao", "crg_semestre", "usuarios", "polo", "historico"} <= set(inspector.get_table_names())
+    assert {"aluno_vigente", "crg_semestre_vigente", "aluno_integrado"} <= set(inspector.get_view_names())
 
 
 async def test_migracoes_sao_idempotentes(db_engine):
@@ -65,6 +65,10 @@ async def test_vigente_resolve_pela_ingestao_mais_recente(db_engine):
 
         linhas = s.execute(select(aluno_vigente).order_by(aluno_vigente.c.matricula)).all()
         assert [(l.matricula, l.renda, l.ingestao_id) for l in linhas] == [(1, "B", i2.id), (2, "C", i1.id)]
+
+        # aluno_integrado: só quem também tem CRG por semestre (acadêmico).
+        integrados = s.execute(select(aluno_integrado)).all()
+        assert [(l.matricula, l.renda) for l in integrados] == [(1, "B")]
 
 
 # Respostas de questionário: toda coluna que guarda uma tem que caber numa

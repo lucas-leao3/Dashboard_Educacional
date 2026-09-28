@@ -1,5 +1,10 @@
 # Como inserir o primeiro lote (L01)
 
+> **Atualização 25/09/2026 — governança simplificada.** A entrada de dados agora é
+> uma importação só (`POST /lotes/importar`: responsável + `.zip`), com período
+> extraído dos históricos, lote fechado automaticamente e imutável no banco, e
+> dashboards só com alunos integrados. Este roteiro é o do L01, feito pelo fluxo antigo; para um lote novo, siga `docs/operacao_lote.md`. Ver `docs/governanca_simplificada.md`.
+
 Roteiro mínimo, pelo Swagger. O "porquê" de cada coisa está em
 `docs/governanca_dados.md`; o roteiro completo (com terminal) em
 `docs/operacao_lote.md`.

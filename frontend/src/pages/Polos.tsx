@@ -26,12 +26,12 @@ export default function Polos() {
   return (
     <AppShell
       titulo="Visão Geral dos Polos"
-      subtitulo="Selecione um polo para ver suas turmas. Compare polos pelo indicador desejado; o tamanho da amostra (n) fica sempre visível."
+      subtitulo="Selecione um polo para ver suas turmas. Compare polos pelo indicador desejado; o tamanho da amostra (n) fica sempre visível. Só entram alunos integrados (histórico acadêmico + questionário socioeconômico)."
       migalhas={[{ rotulo: 'Polos' }]}
     >
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiCard label="Polos" value={porPolo.length} />
-        <KpiCard label="Alunos únicos" value={geral.alunos} hint={periodo ? `respondentes em ${periodo}` : 'em todos os períodos'} />
+        <KpiCard label="Alunos integrados" value={geral.alunos} hint={periodo ? `respondentes em ${periodo}` : 'em todos os períodos'} />
         <KpiCard label="Registros (períodos)" value={geral.registros} hint={`${periodos.length} janela(s) de coleta`} />
         <KpiCard label="Sinalização crítica" value={geral.porSinalizacao.critico} tone="critico" hint={`${geral.porSinalizacao.atencao} em atenção`} />
       </div>

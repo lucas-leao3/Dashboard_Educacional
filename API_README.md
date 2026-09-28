@@ -4,17 +4,14 @@ Uma API FastAPI que consolida dados acadêmicos (CRG) e socioeconômicos de alun
 
 ## Visão Geral
 
-A API mantém uma tabela única de alunos que une três fontes de dado:
+A API une duas fontes pela matrícula e só expõe ao dashboard quem passou pelo cruzamento:
 
 | Fonte | Dados | Como entra |
 |-------|-------|-----------|
-| **Lotes** | Abre a rodada; pré-requisito das outras | `POST /lotes` |
-| **Históricos (PDF)** | Recebe os PDFs do SIGAA para dentro do lote; com `?executar=true` já roda os dois passos | `POST /lotes/{id}/historicos` |
-| **Fechamento** | Sela o lote: `SHA256SUMS`, `lote.md`, CSVs derivados, `fechado_em` | `POST /lotes/{id}/fechar` |
-| **FasiTech** | Socioeconômico (renda, moradia, saúde mental, etc.) | `POST /alunos/sincronizar?lote=<id>` |
-| **Histórico SIGAA** | CRG oficial + nome + data de nascimento | `POST /alunos/atualizar-crg?lote=<id>` |
+| **FasiTech** | Socioeconômico (renda, moradia, saúde mental, etc.) | passo 1 da importação |
+| **Histórico SIGAA (PDF)** | CRG por semestre + nome + data de nascimento + período (data de emissão) | passo 2 da importação |
 
-A API não calcula nada — importa dado já pronto e resolve conflitos entre fontes. Toda escrita fica presa a um **lote** (`docs/governanca_dados.md`) — nada roda sem `?lote=<id>` de um lote já aberto com `POST /lotes`.
+**A única escrita é `POST /lotes/importar`**: responsável + `.zip` dos históricos. A API gera o id do lote, busca o FasiTech, lê os PDFs, extrai o período, gera os relatórios e **fecha o lote** — numa transação só. Lote fechado é imutável (também no banco, por triggers). Ver `docs/governanca_simplificada.md`.
 
 ## Com Docker (recomendado)
 
@@ -46,38 +43,50 @@ Servidor sobe em `http://127.0.0.1:8000`. **`DATABASE_URL` é obrigatória** e t
 
 ## As Rotas
 
-### 1. `POST /lotes`
-Abre um lote: cria `data/raw/lotes/<id>/historicos/` e a linha em `lote`. Pré-requisito de toda rota abaixo que recebe `?lote=<id>`.
+### 1. `POST /lotes/importar`
+Importa um lote. Multipart com **só dois campos**: `responsavel` (texto, 1–100 caracteres) e `arquivo` (`.zip` com os PDFs do SIGAA). No Swagger aparece com seletor de arquivo.
 
-**Body**:
+```bash
+curl -X POST localhost:8000/lotes/importar -F 'responsavel=Edinaldo' -F 'arquivo=@historicos.zip'
+```
+
+O que acontece, em ordem, numa transação: gera o id `AAAA-MM-Lnn`; extrai os `.pdf` do zip para `data/raw/lotes/<id>/historicos/` (subpastas achatadas, `__MACOSX/`/`Thumbs.db` em `ignorados`, teto de 100 MB descomprimidos); **passo 1** — busca o FasiTech, congela em `fasitech.json`, grava uma linha em `usuarios` por registro válido; **passo 2** — lê cada PDF, grava `historico` (com o período = semestre letivo da data de emissão) e `crg_semestre`, e atualiza o vigente de quem tem socioeconômico; `periodos_cobertos` = períodos dos históricos; **fechamento** — `SHA256SUMS`, `lote.md`, `vigente.csv`, `integrados.csv`, `nao_integrados.csv`, `fechado_em`.
+
+**Qualquer erro desfaz tudo** — banco e disco. Não sobra lote pela metade.
+
+**Resposta**: `201` — o lote (já fechado) mais o que a execução fez:
 ```json
 {
-  "id": "2026-09-L01",
-  "periodos_cobertos": ["2025.2", "2026.1"],
-  "executado_por": "edinaldo"
+  "id": "2026-09-L02",
+  "fechado_em": "2026-09-25T10:01:00Z",
+  "periodos_cobertos": ["2025.2"],
+  "executado_por": "Edinaldo",
+  "ingestoes": [{"passo": 1, "...": "..."}, {"passo": 2, "...": "..."}],
+  "excecoes_por_motivo": {"sem_academico": 91},
+  "arquivos": {"gravados": ["historico_202016040011.pdf", "..."], "ja_existiam": [], "ignorados": []},
+  "sincronizar": {"ingestao_id": 1, "importados": 187, "rejeitados": 0},
+  "atualizar_crg": {"ingestao_id": 2, "pdfs_lidos": 56, "semestres_gravados": 258, "alunos_atualizados": 87,
+                    "sem_academico": 91, "sem_socioeconomico": 0, "duplicados": 0, "ilegiveis": 0},
+  "arquivos_gerados": ["/data/raw/lotes/2026-09-L02/SHA256SUMS", "..."],
+  "resumo": {"total": 111, "integrados": 56, "nao_integrados": 55,
+             "por_motivo": {"sem_academico": 55}, "preenchimento_medio_integrados": 62.9}
 }
 ```
 
-**Resposta**: `201`
-```json
-{
-  "id": "2026-09-L01",
-  "executado_em": "2026-09-12T15:30:14.412951Z",
-  "periodos_cobertos": ["2025.2", "2026.1"],
-  "executado_por": "edinaldo",
-  "observacao": null,
-  "ingestoes": [],
-  "excecoes_por_motivo": {}
-}
-```
+**Status de erro** (em todos, nada é gravado):
+- `400` — arquivo não é `.zip`, zip corrompido ou sem nenhum PDF
+- `409` — dois PDFs com o mesmo nome e conteúdo diferente no zip
+- `413` — passa de 100 MB descomprimidos
+- `422` — `responsavel` ausente/vazio; ou nenhum PDF legível (o período não pôde ser identificado)
+- `502` — FasiTech fora do ar ou formato inesperado
+- `503` — `FASITECH_URL` não configurada
 
-**Status de erro**:
-- `409` — lote já existe (no banco ou a pasta já existe em disco)
+A rota **não tem autenticação**, como o resto da API: só deve ficar alcançável por `localhost`/rede interna do compose (`docs/governanca_dados.md`, seção 3.5).
 
 ### 2. `GET /lotes`
 Lista todos os lotes, cada um com suas ingestões (uma por passo já rodado) e as exceções agrupadas por motivo.
 
-**Resposta**: `200` com array de lotes, no mesmo formato do `POST /lotes`.
+**Resposta**: `200` com array de lotes (`id`, `executado_em`, `fechado_em`, `periodos_cobertos`, `executado_por`, `observacao`, `ingestoes`, `excecoes_por_motivo`).
 
 ### 3. `GET /lotes/{id}`
 Busca um lote por id, no mesmo formato acima.
@@ -87,7 +96,7 @@ Busca um lote por id, no mesmo formato acima.
 - `404` — não existe
 
 ### 4. `GET /alunos`
-Lista o valor **vigente** de cada aluno (view `aluno_vigente` — a ingestão mais recente por `matricula, periodo`), com **turma e polo derivados da matrícula** pela própria view (governança §4.8).
+Lista o valor **vigente** de cada aluno **integrado** (view `aluno_integrado` = `aluno_vigente` — a ingestão mais recente por `matricula, periodo` — restrita a quem tem histórico acadêmico **e** resposta socioeconômica), com **turma e polo derivados da matrícula** (governança §4.8). Quem não passou pelo cruzamento não aparece aqui: está no relatório do lote (rota 7).
 
 **Resposta**: `200` com array de alunos (vazio se o banco tá vazio)
 
@@ -125,7 +134,7 @@ Existem porque **a fonte não manda esses dados**: verificada em 2026-09-23, a A
 Polo novo é `INSERT INTO polo` — não exige deploy. As três colunas também entram no `vigente.csv` gerado ao fechar o lote.
 
 ### 4b. `GET /crg-semestres`
-A **trajetória acadêmica**: um ponto por `(matricula, semestre)`, lido da view `crg_semestre_vigente` (ingestão mais recente por chave, como `aluno_vigente`).
+A **trajetória acadêmica**: um ponto por `(matricula, semestre)`, lido da view `crg_semestre_vigente` (ingestão mais recente por chave, como `aluno_vigente`). Só alunos integrados.
 
 ```json
 [{ "matricula": 202016040011, "semestre": "2024.1", "crg": 7.69 },
@@ -137,72 +146,14 @@ A **trajetória acadêmica**: um ponto por `(matricula, semestre)`, lido da view
 `crg: null` é **semestre não apurado** na data de emissão do histórico (§4.6, a regra do zero), e a linha **continua na resposta**. Quem desenha faz lacuna ali: sumir da lista colaria dois semestres distantes como vizinhos, e virar zero inventaria uma queda. Na base atual 2025.2 e 2026.1 têm 56 alunos e nenhuma nota.
 
 ### 5. `GET /alunos/{matricula}`
-Busca um aluno vigente por matrícula (retorna o período mais recente se houver múltiplos).
+Busca um aluno integrado por matrícula (retorna o período mais recente se houver múltiplos).
 
 **Resposta**: 
 - `200` — aluno encontrado
-- `404` — não existe
+- `404` — não existe ou não está integrado
 
-### 6. `POST /alunos?lote=<id>`
-Cadastra um aluno manualmente, gravado na ingestão de passo manual do lote. Só `matricula` e `periodo` são obrigatórios. Sempre insere uma linha nova (a tabela é append-only); quem resolve o vigente é a view.
-
-**Body**:
-```json
-{
-  "matricula": 999999,
-  "periodo": "2026.1",
-  "CRG": 7.5,
-  "nome": "Fulano"
-}
-```
-
-**Resposta**:
-- `201` — criado
-- `400` — o lote de `?lote=<id>` não existe (crie com `POST /lotes`)
-- `422` — falta matrícula ou período
-
-### 7. `POST /alunos/sincronizar?lote=<id>`
-Passo 1 do lote: busca todos os alunos no FasiTech, congela a resposta em `<lote>/fasitech.json` e só então grava — uma linha nova por registro válido.
-
-**Resposta**: `200` com contadores. Exemplo ilustrativo (números fictícios, só para mostrar o formato):
-```json
-{ "lote": "2026-09-L01", "ingestao_id": 1, "importados": 156, "rejeitados": 9 }
-```
-
-**Status de erro**:
-- `400` — lote não existe
-- `409` — o passo 1 já rodou nesse lote
-- `502` — FasiTech fora do ar ou respondeu formato inesperado
-- `503` — `FASITECH_URL` não configurada
-
-### 8. `POST /alunos/atualizar-crg?lote=<id>`
-Passo 2 do lote: lê os PDFs de `<lote>/historicos/`, extrai o CRG **por semestre** (grava em `crg_semestre`, regra do zero aplicada) e insere, para cada vigente do aluno, uma linha nova com o CRG do último semestre apurado, nome e nascimento.
-
-**Resposta**: `200` com contadores.
-
-Exemplo ilustrativo do L01 completo (após `/sincronizar` ter trazido os 103 alunos do FasiTech): 56 PDFs casam, 47 alunos ficam `sem_academico`.
-```json
-{
-  "lote": "2026-09-L01",
-  "ingestao_id": 2,
-  "pdfs_lidos": 56,
-  "semestres_gravados": 258,
-  "alunos_atualizados": 56,
-  "sem_academico": 47,
-  "sem_socioeconomico": 0,
-  "duplicados": 0,
-  "ilegiveis": 0
-}
-```
-Se `/atualizar-crg` rodar antes de `/sincronizar`, todos os PDFs caem em `sem_socioeconomico` (56) e `alunos_atualizados` fica 0 — o CRG é guardado mesmo assim.
-
-**Status de erro**:
-- `400` — lote não existe
-- `409` — o passo 2 já rodou nesse lote
-- `503` — nenhum PDF em `<lote>/historicos/`
-
-### 9. `GET /lotes/{id}/excecoes`
-Lista as exceções do lote, uma por linha, com o passo que a gerou. Ordenada por `passo, matricula, periodo`. É a base do relatório de correspondência (`scripts/lote.py fechar`, `docs/operacao_lote.md`).
+### 6. `GET /lotes/{id}/excecoes`
+Lista as exceções do lote, uma por linha, com o passo que a gerou. Ordenada por `passo, matricula, periodo`. É a trilha de auditoria bruta; o relatório (rota 7) é a leitura dela.
 
 **Resposta**: `200`
 ```json
@@ -214,102 +165,48 @@ Lista as exceções do lote, uma por linha, com o passo que a gerou. Ordenada po
 **Status de erro**:
 - `404` — lote não existe
 
-### 10. `POST /lotes/{id}/historicos[?executar=true]`
-Recebe os históricos do SIGAA (multipart, campo `arquivos`, um ou mais) e grava em `<lote>/historicos/`. No Swagger (`/docs`) aparece com seletor de arquivos. Substitui a cópia manual dos PDFs. Cada arquivo é um `.pdf` ou um `.zip`; do zip só saem as entradas `.pdf`, pelo nome-base (subpastas são achatadas, `__MACOSX/`, `Thumbs.db` etc. vão para `ignorados`). A extensão vira `.pdf` minúsculo — o passo 2 faz `glob("*.pdf")`, sensível a maiúsculas em Linux. `.rar` não é aceito.
+### 7. `GET /lotes/{id}/relatorio`
+Os dois relatórios do lote, sobre a base consolidada no fechamento dele (para o lote mais recente, os integrados são exatamente os alunos de `GET /alunos`). Os mesmos dados de `integrados.csv` e `nao_integrados.csv`.
 
-Reenviar é idempotente: nome que já existe com o **mesmo** conteúdo conta em `ja_existiam`. Nome que já existe com conteúdo **diferente** dá `409` antes de gravar qualquer coisa — insumo de lote não se sobrescreve. Não mexe em `arquivo_fonte`: o registro por SHA-256 continua sendo do passo 2.
-
-```bash
-curl -X POST localhost:8000/lotes/2026-09-L01/historicos \
-  -F 'arquivos=@historicos.zip' -F 'arquivos=@202016040001.pdf'
-```
-
-**`?executar=true`** — depois de gravar, roda `/alunos/sincronizar` (passo 1) e `/alunos/atualizar-crg` (passo 2), pulando o que já executou neste lote. É o jeito de fazer o lote inteiro pelo Swagger em duas chamadas (`POST /lotes` e esta). Se um passo falhar, os PDFs ficam gravados e a resposta é o erro do passo (`502`/`503` do passo 1, por exemplo); reenviar os mesmos arquivos retoma de onde parou.
-
-**Resposta**: `200`
 ```json
 {
-  "lote": "2026-09-L01",
-  "gravados": ["202016040001.pdf"], "ja_existiam": [], "ignorados": ["__MACOSX/._x.pdf"],
-  "sincronizar": {"lote": "2026-09-L01", "ingestao_id": 1, "importados": 103, "rejeitados": 0},
-  "atualizar_crg": {"lote": "2026-09-L01", "ingestao_id": 2, "pdfs_lidos": 56, "sem_academico": 47, "...": "..."}
+  "lote": "2026-09-L02",
+  "resumo": {"total": 111, "integrados": 56, "nao_integrados": 55, "por_motivo": {"sem_academico": 55}, "preenchimento_medio_integrados": 62.9},
+  "integrados": [
+    {"matricula": 202016040011, "nome": "…", "academico": true, "socioeconomico": true, "status": "Integrado com sucesso",
+     "campos_avaliados": 13, "qtd_campos_sem_resposta": 3, "campos_sem_resposta": ["renda", "trabalho", "acesso_internet"],
+     "percentual_preenchimento": 76.9}
+  ],
+  "nao_integrados": [
+    {"matricula": 202116040005, "nome": null, "academico": false, "socioeconomico": true,
+     "motivo": "sem_academico", "motivo_descricao": "Possui socioeconômico e não possui acadêmico", "detalhe": null,
+     "campos_avaliados": 12, "qtd_campos_sem_resposta": 4, "campos_sem_resposta": ["..."], "percentual_preenchimento": 66.7}
+  ]
 }
 ```
-Sem `executar`, `sincronizar` e `atualizar_crg` vêm `null`; passo que já tinha rodado vem como `"ja_executado"`.
 
-**Status de erro**:
-- `400` — lote não existe, ou um `.zip` enviado está corrompido
-- `409` — lote já fechado; o passo 2 já rodou nesse lote (insumo não muda depois de lido); ou há nome repetido com conteúdo diferente
-- `413` — o envio passa de 100 MB descomprimidos (`LIMITE_BYTES_HISTORICOS`); divida em mais de um envio
-
-A rota **não tem autenticação**, como o resto da API: só deve ficar alcançável por `localhost`/rede interna do compose (`docs/governanca_dados.md`, seção 3.5).
-
-### 11. `POST /lotes/{id}/fechar`
-Sela o lote. Exige os passos 1 e 2 executados. Gera em `<lote>/` o `SHA256SUMS` (hash de todo insumo) e o `lote.md` (períodos, quem rodou, contadores por ingestão, exceções por motivo, arquivos com hash, limitações declaradas); gera em `DADOS_PROCESSED_DIR/<lote>/` o `vigente.csv` (corte de `GET /alunos`) e o `correspondencia.csv` (uma linha por matrícula: `Academico`, `SocioEconomico`, `Dado_Faltando`); grava `lote.fechado_em`. Lote fechado não recebe mais históricos nem se reabre.
-
-**Resposta**: `200` — o mesmo objeto de `GET /lotes/{id}` (agora com `fechado_em` preenchido) mais `arquivos_gerados`, os quatro caminhos como a API os vê (dentro do container, `/data/...`).
-
-**Status de erro**:
-- `404` — lote não existe
-- `409` — já fechado, ou faltam os passos 1 e/ou 2
-
-### 12. `GET /lotes/{id}/correspondencia`
-O `correspondencia.csv` como JSON: uma linha por matrícula, ordenada. É o que a tela **Dados** do dashboard mostra na "Cobertura do lote".
-
-```json
-[{"matricula": 202016040001, "nome": "Ana", "academico": true, "socioeconomico": false, "faltando": "SocioEconomico"}]
-```
-`faltando` ∈ `""`, `"Academico"`, `"SocioEconomico"`, `"Ambos"`. `404` se o lote não existe.
+`motivo` ∈ `sem_academico`, `sem_socioeconomico`, `falha_identificacao` (PDF ilegível/sem matrícula, ou registro sem período), `matricula_nao_encontrada` (registro do FasiTech sem matrícula válida). Regras de completude em `docs/governanca_simplificada.md` §5. `404` se o lote não existe.
 
 ## Fluxo de um lote
 
-Um lote é uma rodada completa de importação (`docs/governanca_dados.md`, seção 5). Os passos rodam em ordem; são idempotentes — repetir uma chamada não duplica nem apaga o que já foi importado (o passo já executado responde `409`).
+1. **Importar** — rota 1 (tela Dados, `scripts/lote.py importar`, Swagger ou `curl`).
+2. **Conferir** — rota 7 (ou a tela Dados, que mostra o relatório logo abaixo do formulário).
+3. **Commit no repositório privado de dados** (fora deste repo — `docs/governanca_dados.md`, seção 3.4).
 
-1. **Criar o lote** — abre `data/raw/lotes/<id>/historicos/` e a linha em `lote`.
-   ```bash
-   curl -X POST localhost:8000/lotes -H 'content-type: application/json' \
-     -d '{"id":"2026-09-L01","periodos_cobertos":["2025.2","2026.1"],"executado_por":"edinaldo"}'
-   ```
-2. **Enviar os PDFs e rodar** — os históricos entram pela rota 10; com `executar=true` o passo 1 (`/sincronizar`: busca o FasiTech e congela `fasitech.json`) e o passo 2 (`/atualizar-crg`: lê os PDFs, grava CRG por semestre) rodam em seguida.
-   ```bash
-   curl -X POST 'localhost:8000/lotes/2026-09-L01/historicos?executar=true' -F 'arquivos=@historicos.zip'
-   ```
-   (As rotas 7 e 8 continuam existindo para rodar cada passo à parte.)
-3. **Conferir** — `GET /lotes/2026-09-L01` (contadores, exceções por motivo), `GET /lotes/2026-09-L01/excecoes`, o dashboard, e se os períodos em `fasitech.json` batem com os declarados.
-4. **Fechar o lote** — rota 11: `SHA256SUMS`, `lote.md`, CSVs derivados, `fechado_em`.
-   ```bash
-   curl -X POST localhost:8000/lotes/2026-09-L01/fechar
-   ```
-5. **Commit no repositório privado de dados** (fora deste repo — `docs/governanca_dados.md`, seção 3.4).
-
-`scripts/lote.py` faz o mesmo pelo terminal (`executar` = passos 1 e 2; `fechar` = passo 4) — roteiro em `docs/operacao_lote.md`. Depois do passo 4, `GET /alunos` (via a view `aluno_vigente`) já reflete o lote; o anterior continua intacto para auditoria.
+Dado novo = nova importação = lote novo. Os anteriores ficam intactos. Roteiro em `docs/operacao_lote.md`.
 
 ## Dados Faltantes
 
-Hoje (02/09/2026): 103 alunos distintos, 56 com CRG completo, 47 ainda aguardando histórico.
-
-Um aluno **sem CRG** aparece normal na API com `"CRG": null`. O resto dos dados continua acessível. Quando o histórico dele chegar, é só rodar `/atualizar-crg` de novo.
-
-```json
-{
-  "matricula": 202116040005,
-  "periodo": "2024.(3 e 4)",
-  "CRG": null,              // falta — será preenchido quando histórico chegar
-  "genero": "Feminino",     // veio do FasiTech
-  "renda": "Até 1 salário mínimo",
-  ...
-}
-```
+L01 (dados reais): 111 matrículas, 56 integradas, 55 só com socioeconômico (sem histórico). Essas 55 não aparecem em `GET /alunos` nem nos dashboards; estão no relatório de não integrados com o motivo. Quando os históricos chegarem, uma nova importação as integra.
 
 ## Testes
 
-90 testes automatizados cobrindo as rotas de lotes (6), de alunos (5) e o `scripts/lote.py`. Rodam offline (nenhuma chamada real ao FasiTech).
+A suíte roda offline (FasiTech e leitura de PDF falsificados) contra um PostgreSQL de verdade:
 
 ```bash
-PYTHONPATH=backend venvDashboard\Scripts\python.exe -m pytest -v
+pytest -q                                   # com Docker: sobe um postgres:17-alpine descartável
+TEST_POSTGRES_URL=postgresql+psycopg://postgres@localhost:55432/postgres pytest -q   # sem Docker
 ```
-
-Resultado esperado: **90 passed**
 
 ## Arquivos de Configuração
 
@@ -331,24 +228,32 @@ BancoDeDados.sqlite      # resíduo do SQLite abandonado — pode ser apagado
 ```
 backend/app/
 ├── main.py                         # FastAPI app + health-check
-├── api/alunos.py                   # as 6 rotas (199 linhas)
-├── schemas/alunos.py               # Pydantic: AlunoCreate, AlunoOut
-├── db/engine.py                    # SQLAlchemy: table Usuarios + engine
+├── api/
+│   ├── lotes.py                    # importar (única escrita), listar, buscar, exceções, relatório
+│   ├── alunos.py                   # só leitura, da view aluno_integrado
+│   └── crg.py                      # trajetória por semestre, só integrados
+├── schemas/                        # Pydantic: alunos, lotes (importação, relatório), crg
+├── db/
+│   ├── engine.py                   # modelos: lote, ingestao, arquivo_fonte, usuarios, crg_semestre, historico, excecao, polo
+│   └── vigente.py                  # views aluno_vigente, aluno_integrado, crg_semestre_vigente
 ├── services/
+│   ├── importacao.py               # a importação: passos 1 e 2, período, fechamento, tudo ou nada
+│   ├── relatorio.py                # integrados, não integrados, completude
+│   ├── fechamento.py               # SHA256SUMS, lote.md, CSVs, fechado_em
+│   ├── lotes.py                    # pasta do lote, id, hash, ingestão, exceção, extração do zip
 │   ├── fasitech_client.py          # HTTP client paginado
-│   └── crg_historico.py            # leitor CSV histórico
+│   ├── ausentes.py                 # CLI: alunos do FasiTech fora da base integrada (python -m app.services.ausentes)
+│   └── crg_historico.py            # leitor do PDF do SIGAA
 └── core/config.py                  # .env loader
 
-backend/migrations/                  # revisões do Alembic (ver docs/migracoes.md)
-├── env.py                          # lê a URL de app.core.config
-└── versions/                       # uma revisão por mudança de schema
-
-tests/                               # 52 testes no total (6 arquivos)
-├── conftest.py                     # fixture client (banco isolado)
-└── test_*.py                       # alunos, lotes, crg_historico, fasitech_client, schema, servico_lotes
+backend/migrations/versions/         # revisões do Alembic (ver docs/migracoes.md)
+tests/                               # pytest contra PostgreSQL real (conftest.py)
+scripts/lote.py                      # CLI: importar, relatorio
 ```
 
 ## Arquivos Criados Nesta Demanda
+
+> Registro histórico do commit `30a232e` (02/09/2026). O estado atual está em "Arquitetura" acima.
 
 Todos os arquivos abaixo foram desenvolvidos especificamente para esta API — `db/engine.py` já existia antes e só recebeu ajuste de tipo em dois campos.
 
@@ -369,29 +274,32 @@ Todos os arquivos abaixo foram desenvolvidos especificamente para esta API — `
 
 ## Limitações Conhecidas
 
-1. **CRG incompleto**: 47 dos 103 alunos ainda faltam histórico
+1. **Históricos faltando**: no L01, 55 das 111 matrículas têm só socioeconômico e ficam fora dos dashboards (relatório de não integrados)
 2. **Campos que a planilha legada preenchia ficam `NULL`**: o L01 é só API + PDF; `DadosAgrupados.csv` foi abandonado (`docs/superpowers/2026-09-12-primeiro-lote-design.md`) — limitação declarada da fonte, não defeito do lote
-3. **Multiplicidade por matrícula**: Um aluno pode ter múltiplas linhas (um por período socioeconômico) — isso é proposital, use `GET /alunos` e agregue se quiser "um por aluno"
+3. **`trabalho`, `acesso_internet` e `renda` vêm nulos do FasiTech** em 187, 187 e 184 de 187 registros — aparece como "campo sem resposta" nos relatórios; conferir o mapeamento na fonte
+4. **Multiplicidade por matrícula**: Um aluno pode ter múltiplas linhas (um por período socioeconômico) — isso é proposital, use `GET /alunos` e agregue se quiser "um por aluno"
 
 ## Tratamento de Erros
 
 | Status | Significa |
 |--------|-----------|
-| `400` | `?lote=` aponta para um lote que não existe (crie com `POST /lotes`) |
-| `404` | Recurso não existe (matrícula ou lote não cadastrado) |
-| `409` | Lote já existe (`POST /lotes`) ou passo já executado neste lote (`/sincronizar`, `/atualizar-crg`) |
-| `422` | Dado inválido (falta campo obrigatório) |
+| `400` | Arquivo da importação não é `.zip`, está corrompido ou não tem PDF |
+| `404` | Recurso não existe (matrícula integrada ou lote) |
+| `409` | Dois PDFs com mesmo nome e conteúdo diferente no zip |
+| `413` | Zip passa de 100 MB descomprimidos |
+| `422` | Dado inválido: falta `responsavel`, ou nenhum histórico legível (sem período) |
 | `502` | Dependência externa falhou (FasiTech indisponível, formato inesperado) |
-| `503` | Pré-requisito local ausente (URL não configurada, PDF ou CSV não encontrado no lote) |
+| `503` | `FASITECH_URL` não configurada |
+
+Em erro na importação, nada é gravado.
 
 ## Próximas Etapas
 
-- [ ] Adicionar 47 históricos faltantes a `crg_historico.csv`
+- [ ] Importar os históricos que faltam (55 matrículas do L01)
+- [ ] Confirmar com o FasiTech o mapeamento de `trabalho`, `acesso_internet` e `renda`
 - [ ] Implementar paginação em `GET /alunos` (hoje retorna tudo)
-- [ ] Adicionar filtros por período, gênero, renda, etc.
 
 ---
 
-**Última atualização**: 02/09/2026  
-**Commits**: 52 testes passando, código em `main` branch  
+**Última atualização**: 25/09/2026 (governança simplificada, `docs/governanca_simplificada.md`)  
 **Documentação técnica completa**: Veja `/docs` no servidor ou consulte `backend/app/` direto

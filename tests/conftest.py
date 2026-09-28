@@ -20,7 +20,11 @@ sessão; cada teste ganha um banco novo clonado de um modelo com as migrações
 já aplicadas (`CREATE DATABASE ... TEMPLATE`), que no PostgreSQL é cópia de
 arquivo -- barato. Aplicar as migrações uma vez por teste custaria caro.
 """
+import io
+import os
 import uuid
+import zipfile
+from datetime import date
 
 import pytest
 import pytest_asyncio
@@ -38,20 +42,31 @@ BANCO_MODELO = "modelo"
 
 @pytest.fixture(scope="session")
 def postgres():
-    """Um PostgreSQL por sessão de teste. Encerrado no fim, com o volume."""
+    """URL de admin de um PostgreSQL por sessão de teste.
+
+    Padrão: contêiner descartável, encerrado no fim com o volume. Sem Docker na
+    máquina, TEST_POSTGRES_URL aponta para um PostgreSQL já de pé (ex.:
+    postgresql+psycopg://postgres@localhost:55432/postgres) -- continua sendo
+    PostgreSQL, só muda quem o sobe."""
+    externo = os.getenv("TEST_POSTGRES_URL")
+    if externo:
+        yield externo
+        return
     with PostgresContainer(IMAGEM_POSTGRES, driver="psycopg") as container:
-        yield container
+        yield container.get_connection_url()
 
 
 @pytest.fixture(scope="session")
 def modelo(postgres):
     """Cria UMA vez o banco `modelo`, com todas as migrações aplicadas, e
     devolve (url_de_admin, prefixo_de_url). Cada teste clona daqui."""
-    url_admin = postgres.get_connection_url()
+    url_admin = postgres
     base = url_admin.rsplit("/", 1)[0]
 
     admin = create_engine(url_admin, isolation_level="AUTOCOMMIT")
     with admin.connect() as conexao:
+        # Só sobra modelo de sessão anterior em servidor externo, que não morre com a suíte.
+        conexao.execute(text(f'DROP DATABASE IF EXISTS "{BANCO_MODELO}"'))
         conexao.execute(text(f'CREATE DATABASE "{BANCO_MODELO}"'))
     admin.dispose()
 
@@ -107,8 +122,113 @@ async def client(monkeypatch, tmp_path, db_engine):
 
 
 @pytest_asyncio.fixture()
-async def lote(client):
-    """Um lote aberto, pronto pra receber as rotas de dados. Devolve o id."""
-    resposta = await client.post("/lotes", json={"id": "2026-09-L01", "periodos_cobertos": ["2025.2", "2026.1"]})
-    assert resposta.status_code == 201, resposta.json()
+async def lote(client, db_engine):
+    """Um lote ABERTO, criado direto no banco, com a pasta de históricos.
+
+    A API não deixa lote aberto para trás (a importação cria e fecha na mesma
+    transação); este estado só existe para testes que montam o banco à mão --
+    view, triggers, relatório. Devolve o id."""
+    from sqlalchemy.orm import Session
+
+    from app.db.engine import Lote
+
+    with Session(db_engine) as session:
+        session.add(Lote(id="2026-09-L01", periodos_cobertos="2025.2", executado_por="Teste"))
+        session.commit()
+    (config.RAIZ_LOTES / "2026-09-L01" / "historicos").mkdir(parents=True)
     return "2026-09-L01"
+
+
+@pytest.fixture()
+def semear(db_engine, lote):
+    """semear(matricula, periodo=..., academico=True, passo=1, **campos) grava
+    direto no banco uma linha de `usuarios` (socioeconômico) e, se
+    `academico`, um semestre em `crg_semestre` -- o que torna o aluno
+    integrado. `passo` escolhe a ingestão (1 ou 2) da linha de usuarios."""
+    from sqlalchemy.orm import Session
+
+    from app.db.engine import CrgSemestre, Ingestao, Usuarios
+
+    with Session(db_engine) as session:
+        ingestoes = {passo: Ingestao(lote_id=lote, passo=passo) for passo in (1, 2)}
+        session.add_all(ingestoes.values())
+        session.commit()
+        ids = {passo: i.id for passo, i in ingestoes.items()}
+
+    def _semear(matricula: int, periodo: str = "2026.1", academico: bool = True, passo: int = 1, **campos):
+        with Session(db_engine) as session:
+            session.add(Usuarios(matricula=matricula, periodo=periodo, ingestao_id=ids[passo], **campos))
+            if academico:
+                session.merge(CrgSemestre(matricula=matricula, semestre="2025.1", crg=7.0, ingestao_id=ids[2]))
+            session.commit()
+    _semear.ingestoes = ids
+    return _semear
+
+
+# ---------------------------------------------------------------------------
+# Importação: as duas fontes externas falsificadas. Nenhum teste chama o
+# FasiTech de verdade nem lê PDF real -- carregar_historico devolve o que o
+# teste registrou para o nome do arquivo.
+# ---------------------------------------------------------------------------
+
+def envelope(*registros):
+    return {"url": "http://fasitech", "params": {}, "coletado_em": "2026-09-12T00:00:00+00:00",
+            "paginas": [{"dados": list(registros), "pagina": 1, "total_paginas": 1}]}
+
+
+def historico(matricula: int, crg: dict, emitido_em=date(2025, 12, 10), nome="ALUNO TESTE", nascimento="01/01/2000"):
+    return {"matricula": matricula, "nome": nome, "data_de_nascimento": nascimento,
+            "emitido_em": emitido_em, "crg_por_semestre": crg}
+
+
+class Fontes:
+    """`fasitech`: registros que a API devolve. `historicos`: nome do PDF sem
+    extensão -> dict de carregar_historico, ou uma exceção para levantar."""
+
+    def __init__(self):
+        self.fasitech: list[dict] = []
+        self.historicos: dict[str, dict | Exception] = {}
+        self.erro_fasitech: Exception | None = None
+
+    def buscar_paginas(self):
+        if self.erro_fasitech is not None:
+            raise self.erro_fasitech
+        return envelope(*self.fasitech)
+
+    def carregar_historico(self, caminho):
+        lido = self.historicos[caminho.stem]
+        if isinstance(lido, Exception):
+            raise lido
+        return lido
+
+
+@pytest.fixture()
+def fontes(monkeypatch):
+    from app.services import importacao
+
+    falsas = Fontes()
+    monkeypatch.setattr(importacao, "buscar_paginas", falsas.buscar_paginas)
+    monkeypatch.setattr(importacao, "carregar_historico", falsas.carregar_historico)
+    return falsas
+
+
+def zip_de(entradas: dict[str, bytes] | list[str]) -> bytes:
+    """Lista de nomes -> cada PDF com conteúdo próprio (hash distinto)."""
+    if isinstance(entradas, list):
+        entradas = {nome: f"pdf {nome}".encode() for nome in entradas}
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as z:
+        for nome, conteudo in entradas.items():
+            z.writestr(nome, conteudo)
+    return buffer.getvalue()
+
+
+@pytest.fixture()
+def importar(client):
+    """await importar(zip_bytes) -> resposta de POST /lotes/importar."""
+    async def _importar(conteudo: bytes, responsavel: str | None = "Edinaldo", nome: str = "historicos.zip"):
+        dados = {} if responsavel is None else {"responsavel": responsavel}
+        return await client.post(
+            "/lotes/importar", data=dados, files={"arquivo": (nome, conteudo, "application/zip")},
+        )
+    return _importar

@@ -31,7 +31,7 @@ target_metadata = Base.metadata
 
 # As views são criadas por migração (op.execute), não pelo metadata. Sem isto
 # o autogenerate as trataria como tabelas estranhas e proporia dropá-las.
-_IGNORAR = {"aluno_vigente", "crg_semestre_vigente"}
+_IGNORAR = {"aluno_vigente", "crg_semestre_vigente", "aluno_integrado"}
 
 
 def include_object(objeto, nome, tipo, reflexo, comparar_com):

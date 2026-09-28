@@ -1,5 +1,10 @@
 # Governança dos Dados
 
+> **Atualização 25/09/2026 — governança simplificada.** A entrada de dados agora é
+> uma importação só (`POST /lotes/importar`: responsável + `.zip`), com período
+> extraído dos históricos, lote fechado automaticamente e imutável no banco, e
+> dashboards só com alunos integrados. O fluxo de abrir/enviar/rodar/fechar descrito na §3 e na §5 foi substituído; os fundamentos (append-only, hashes, repositório de dados, views) continuam valendo. Ver `docs/governanca_simplificada.md`.
+
 Como parar de perder dado no projeto e deixar rastreável de onde veio cada valor.
 
 ---

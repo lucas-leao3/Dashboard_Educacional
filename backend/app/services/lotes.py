@@ -5,6 +5,7 @@ import hashlib
 import io
 import zipfile
 from collections.abc import Iterator
+from datetime import date
 from pathlib import Path
 
 from fastapi import HTTPException
@@ -56,42 +57,19 @@ def registrar_arquivo(session: Session, lote_id: str, caminho: Path, tipo: str) 
     return registro
 
 
-def exigir_lote(session: Session, lote_id: str) -> Lote:
-    lote = session.get(Lote, lote_id)
-    if lote is None:
-        raise HTTPException(status_code=400, detail=f"Lote '{lote_id}' não existe. Crie com POST /lotes.")
-    return lote
-
-
-def _ingestao_existente(session: Session, lote_id: str, passo: int) -> Ingestao | None:
-    return session.execute(
-        select(Ingestao).where(Ingestao.lote_id == lote_id, Ingestao.passo == passo)
-    ).scalars().first()
-
-
-def exigir_passo_livre(session: Session, lote_id: str, passo: int) -> None:
-    """Levanta 409 se o passo já rodou no lote. Chamada ANTES de qualquer
-    efeito colateral que não seja transacional (ex.: congelar um arquivo em
-    disco) -- se o passo já rodou, nada além do banco pode reverter."""
-    existente = _ingestao_existente(session, lote_id, passo)
-    if existente is not None:
-        raise HTTPException(
-            status_code=409,
-            detail=f"Passo {passo} já foi executado no lote '{lote_id}' (ingestão {existente.id}).",
-        )
+def proximo_id(session: Session, hoje: date) -> str:
+    """AAAA-MM-Lnn do mês de `hoje`; nn = maior sequência do mês + 1, olhando
+    o banco E o disco -- uma pasta órfã em raw/lotes/ também ocupa o número."""
+    prefixo = f"{hoje.year}-{hoje.month:02d}-L"
+    ids = set(session.execute(select(Lote.id).where(Lote.id.like(f"{prefixo}%"))).scalars())
+    if config.RAIZ_LOTES.exists():
+        ids |= {p.name for p in config.RAIZ_LOTES.iterdir() if p.name.startswith(prefixo)}
+    sequencias = [int(i[len(prefixo):]) for i in ids if i[len(prefixo):].isdigit()]
+    return f"{prefixo}{max(sequencias, default=0) + 1:02d}"
 
 
 def abrir_ingestao(session: Session, lote_id: str, passo: int, arquivo_sha256: str | None = None) -> Ingestao:
-    """Uma ingestão por passo por lote. O passo manual (0) é reaproveitado
-    entre chamadas; os outros só podem rodar uma vez por lote."""
-    existente = _ingestao_existente(session, lote_id, passo)
-    if existente is not None:
-        if passo == Ingestao.PASSO_MANUAL:
-            return existente
-        raise HTTPException(
-            status_code=409,
-            detail=f"Passo {passo} já foi executado no lote '{lote_id}' (ingestão {existente.id}).",
-        )
+    """Uma ingestão por passo por lote (o banco garante: ux_ingestao_lote_passo)."""
     ingestao = Ingestao(lote_id=lote_id, passo=passo, arquivo_sha256=arquivo_sha256)
     session.add(ingestao)
     session.flush()
@@ -102,7 +80,9 @@ def fechar_ingestao(session: Session, ingestao: Ingestao, lidos: int, aceitos: i
     ingestao.registros_lidos += lidos
     ingestao.registros_aceitos += aceitos
     ingestao.registros_rejeitados += rejeitados
-    session.commit()
+    # flush, não commit: a importação inteira é uma transação só, que o
+    # fechamento do lote confirma (app.services.importacao).
+    session.flush()
 
 
 def registrar_excecao(
@@ -157,12 +137,13 @@ def gravar_historicos(lote_id: str, arquivos: list[tuple[str, bytes]]) -> dict[s
     <lote>/historicos/. A extensão é normalizada para '.pdf' minúsculo:
     o passo 2 faz glob("*.pdf"), sensível a maiúsculas em Linux.
 
-    Nome que já existe na pasta: mesmo conteúdo -> `ja_existiam` (reenviar é
-    idempotente); conteúdo diferente -> 409 antes de gravar qualquer coisa,
+    Nome repetido (na pasta ou no próprio envio): mesmo conteúdo ->
+    `ja_existiam`; conteúdo diferente -> 409 antes de gravar qualquer coisa,
     porque insumo de lote não se sobrescreve."""
     destino = caminho_do_lote(lote_id) / "historicos"
     resultado: dict[str, list[str]] = {"gravados": [], "ja_existiam": [], "ignorados": []}
     a_gravar: list[tuple[str, bytes]] = []
+    pendentes: dict[str, bytes] = {}
     conflitos: list[str] = []
     total = 0
     for nome, conteudo in arquivos:
@@ -172,17 +153,24 @@ def gravar_historicos(lote_id: str, arquivos: list[tuple[str, bytes]]) -> dict[s
                 raise _excesso()
             nome_final = Path(nome_pdf).stem + ".pdf"
             existente = destino / nome_final
-            if not existente.exists():
+            # O mesmo nome pode vir duas vezes no mesmo zip (subpastas
+            # diferentes achatadas): sem isto o segundo sobrescreveria o
+            # primeiro sem aviso.
+            anterior = pendentes.get(nome_final)
+            if anterior is None and existente.exists():
+                anterior = existente.read_bytes()
+            if anterior is None:
+                pendentes[nome_final] = bytes_pdf
                 a_gravar.append((nome_final, bytes_pdf))
-            elif existente.read_bytes() == bytes_pdf:
+            elif anterior == bytes_pdf:
                 resultado["ja_existiam"].append(nome_final)
             else:
                 conflitos.append(nome_final)
     if conflitos:
         raise HTTPException(
             status_code=409,
-            detail=f"Já existe com conteúdo diferente em '{lote_id}/historicos/': {', '.join(conflitos)}. "
-                   "Insumo de lote não se sobrescreve; abra outro lote.",
+            detail=f"Mais de um histórico com o mesmo nome e conteúdo diferente: {', '.join(conflitos)}. "
+                   "Renomeie ou remova a duplicata do .zip.",
         )
     for nome_final, bytes_pdf in a_gravar:
         (destino / nome_final).write_bytes(bytes_pdf)

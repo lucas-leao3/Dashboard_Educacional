@@ -1,7 +1,7 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Iterator
 
-from sqlalchemy import BigInteger, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, create_engine
+from sqlalchemy import BigInteger, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, create_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, Session, sessionmaker
 
 from app.core.config import DATABASE_URL
@@ -22,11 +22,16 @@ class Lote(Base):
 
     id: Mapped[str] = mapped_column(String(20), primary_key=True)       # 2026-09-L01
     executado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_agora)
-    periodos_cobertos: Mapped[str] = mapped_column(String(100))        # '2025.2;2026.1'
+    # Extraído dos históricos (semestre letivo da data de emissão de cada
+    # PDF), nunca digitado. Ver Historico.periodo.
+    periodos_cobertos: Mapped[str] = mapped_column(String(100))        # '2025.2' ou '2025.2;2026.1'
+    # O responsável pela importação -- o único dado que o usuário informa.
     executado_por: Mapped[str | None] = mapped_column(String(100))
+    # Só lotes anteriores à importação simplificada (o L01) podem ter.
     observacao: Mapped[str | None] = mapped_column(Text)
-    # Preenchido por POST /lotes/{id}/fechar. Lote fechado não recebe mais
-    # insumo nem se reabre.
+    # Carimbado ao fim da importação, na mesma transação que grava os dados.
+    # Lote fechado é imutável: triggers no banco recusam alterá-lo ou escrever
+    # qualquer linha ligada a ele (revisão c5e8a1f3d920).
     fechado_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
@@ -47,7 +52,6 @@ class Ingestao(Base):
     __tablename__ = "ingestao"
     __table_args__ = (UniqueConstraint("lote_id", "passo", name="ux_ingestao_lote_passo"),)
 
-    PASSO_MANUAL = 0
     PASSO_SINCRONIZAR = 1
     PASSO_CRG = 2
 
@@ -82,6 +86,26 @@ class CrgSemestre(Base):
     semestre: Mapped[str] = mapped_column(String(6), primary_key=True)   # '2024.1'
     ingestao_id: Mapped[int] = mapped_column(ForeignKey("ingestao.id"), primary_key=True)
     crg: Mapped[float | None] = mapped_column(Float)
+
+
+class Historico(Base):
+    """Um PDF de histórico lido numa ingestão de passo 2: quem é o aluno e
+    de quando é o documento. `periodo` é o semestre letivo da data de emissão
+    -- é o período do histórico, e a união deles é lote.periodos_cobertos.
+
+    Presença de histórico não é a regra do cruzamento (quem decide é
+    crg_semestre, que o L01 já tem e esta tabela não); aqui fica o que o PDF
+    diz sobre identificação e data, inclusive de quem não tem socioeconômico."""
+    __tablename__ = "historico"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    ingestao_id: Mapped[int] = mapped_column(ForeignKey("ingestao.id"))
+    arquivo_sha256: Mapped[str | None] = mapped_column(ForeignKey("arquivo_fonte.sha256"))
+    matricula: Mapped[int] = mapped_column(BigInteger, index=True)
+    nome: Mapped[str | None] = mapped_column(String(100))
+    data_de_nascimento: Mapped[str | None] = mapped_column(String)
+    emitido_em: Mapped[date] = mapped_column(Date)
+    periodo: Mapped[str] = mapped_column(String(6))                     # '2025.2'
 
 
 class Polo(Base):

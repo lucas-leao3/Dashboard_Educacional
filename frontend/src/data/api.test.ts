@@ -53,61 +53,62 @@ describe('carregarLotes', () => {
   });
 });
 
-import { ErroApi, abrirLote, carregarCorrespondencia, enviarHistoricos, fecharLote } from './api';
+import { ErroApi, carregarRelatorio, importarLote } from './api';
 
-const LOTE = {
-  id: '2026-09-L01', executado_em: '2026-09-12T10:00:00Z', fechado_em: null,
-  periodos_cobertos: ['2026.1'], executado_por: null, observacao: null, ingestoes: [], excecoes_por_motivo: {},
+const IMPORTACAO = {
+  id: '2026-09-L02', executado_em: '2026-09-25T10:00:00Z', fechado_em: '2026-09-25T10:01:00Z',
+  periodos_cobertos: ['2025.2'], executado_por: 'Edinaldo', observacao: null, ingestoes: [], excecoes_por_motivo: {},
+  arquivos: { gravados: ['a.pdf'], ja_existiam: [], ignorados: [] }, sincronizar: {}, atualizar_crg: {},
+  arquivos_gerados: [], resumo: { total: 1, integrados: 1, nao_integrados: 0, por_motivo: {}, preenchimento_medio_integrados: 100 },
 };
 
-describe('escrita na API (abrirLote, enviarHistoricos, fecharLote)', () => {
-  test('abrirLote faz POST /lotes com JSON e devolve o lote', async () => {
+describe('escrita na API (importarLote)', () => {
+  test('importarLote manda multipart só com responsavel e arquivo', async () => {
     let capturado: { url: string; init?: RequestInit } | null = null;
     const fetchFalso = async (url: string | URL | Request, init?: RequestInit) => {
       capturado = { url: String(url), init };
-      return new Response(JSON.stringify(LOTE), { status: 201 });
+      return new Response(JSON.stringify(IMPORTACAO), { status: 201 });
     };
-    const lote = await abrirLote({ id: '2026-09-L01', periodos_cobertos: ['2026.1'], executado_por: 'Edi' }, { baseUrl: '/api', fetchFn: fetchFalso });
-    expect(lote.id).toBe('2026-09-L01');
-    expect(capturado!.url).toBe('/api/lotes');
+    const saida = await importarLote('Edinaldo', new File(['PK'], 'historicos.zip'), { baseUrl: '/api', fetchFn: fetchFalso });
+    expect(saida.id).toBe('2026-09-L02');
+    expect(capturado!.url).toBe('/api/lotes/importar');
     expect(capturado!.init?.method).toBe('POST');
-    expect(JSON.parse(String(capturado!.init?.body))).toEqual({ id: '2026-09-L01', periodos_cobertos: ['2026.1'], executado_por: 'Edi' });
-  });
-
-  test('enviarHistoricos manda multipart com um campo "arquivos" por arquivo e executar=true', async () => {
-    let capturado: { url: string; init?: RequestInit } | null = null;
-    const fetchFalso = async (url: string | URL | Request, init?: RequestInit) => {
-      capturado = { url: String(url), init };
-      return new Response(JSON.stringify({ lote: '2026-09-L01', gravados: ['a.pdf'], ja_existiam: [], ignorados: [], sincronizar: null, atualizar_crg: null }), { status: 200 });
-    };
-    const arquivos = [new File(['x'], 'a.pdf'), new File(['y'], 'b.zip')];
-    const saida = await enviarHistoricos('2026-09-L01', arquivos, { baseUrl: '/api', fetchFn: fetchFalso });
-    expect(saida.gravados).toEqual(['a.pdf']);
-    expect(capturado!.url).toBe('/api/lotes/2026-09-L01/historicos?executar=true');
     const form = capturado!.init?.body as FormData;
-    expect(form.getAll('arquivos').map((f) => (f as File).name)).toEqual(['a.pdf', 'b.zip']);
+    expect([...form.keys()].sort()).toEqual(['arquivo', 'responsavel']);
+    expect(form.get('responsavel')).toBe('Edinaldo');
+    expect((form.get('arquivo') as File).name).toBe('historicos.zip');
   });
 
   test('erro HTTP vira ErroApi com o detail do FastAPI', async () => {
-    const fetchFalso = async () => new Response(JSON.stringify({ detail: 'Passo 2 já foi executado' }), { status: 409 });
-    await expect(fecharLote('2026-09-L01', { baseUrl: '/api', fetchFn: fetchFalso })).rejects.toMatchObject({ status: 409, detail: 'Passo 2 já foi executado' });
+    const fetchFalso = async () => new Response(JSON.stringify({ detail: 'Erro ao consultar o FasiTech' }), { status: 502 });
+    await expect(importarLote('Edi', new File(['x'], 'h.zip'), { baseUrl: '/api', fetchFn: fetchFalso }))
+      .rejects.toMatchObject({ status: 502, detail: 'Erro ao consultar o FasiTech' });
+  });
+
+  test('detail em lista (422 do FastAPI) vira texto', async () => {
+    const fetchFalso = async () => new Response(JSON.stringify({ detail: [{ loc: ['body', 'responsavel'], msg: 'Field required' }] }), { status: 422 });
+    const erro = await importarLote('', new File(['x'], 'h.zip'), { baseUrl: '/api', fetchFn: fetchFalso }).catch((e) => e);
+    expect(erro.status).toBe(422);
+    expect(erro.detail).toContain('responsavel');
   });
 
   test('fetch rejeitado vira ErroApi "Sem resposta da API"', async () => {
     const fetchFalso = async () => { throw new Error('rede'); };
-    const erro = await abrirLote({ id: 'x', periodos_cobertos: [], executado_por: null }, { baseUrl: '/api', fetchFn: fetchFalso }).catch((e) => e);
+    const erro = await importarLote('Edi', new File(['x'], 'h.zip'), { baseUrl: '/api', fetchFn: fetchFalso }).catch((e) => e);
     expect(erro).toBeInstanceOf(ErroApi);
     expect(erro.status).toBe(0);
     expect(erro.detail).toBe('Sem resposta da API');
   });
 
   test('sem baseUrl a escrita falha em vez de cair na demonstração', async () => {
-    await expect(fecharLote('x', { baseUrl: '' })).rejects.toBeInstanceOf(ErroApi);
+    await expect(importarLote('Edi', new File(['x'], 'h.zip'), { baseUrl: '' })).rejects.toBeInstanceOf(ErroApi);
   });
 
-  test('carregarCorrespondencia devolve as linhas', async () => {
-    const linhas = [{ matricula: 100, nome: 'Ana', academico: true, socioeconomico: true, faltando: '' }];
-    const fetchFalso = async () => new Response(JSON.stringify(linhas), { status: 200 });
-    expect(await carregarCorrespondencia('2026-09-L01', { baseUrl: '/api', fetchFn: fetchFalso })).toEqual(linhas);
+  test('carregarRelatorio lê GET /lotes/{id}/relatorio', async () => {
+    const relatorio = { lote: '2026-09-L02', resumo: IMPORTACAO.resumo, integrados: [], nao_integrados: [] };
+    let url = '';
+    const fetchFalso = async (u: string | URL | Request) => { url = String(u); return new Response(JSON.stringify(relatorio), { status: 200 }); };
+    expect(await carregarRelatorio('2026-09-L02', { baseUrl: '/api', fetchFn: fetchFalso })).toEqual(relatorio);
+    expect(url).toBe('/api/lotes/2026-09-L02/relatorio');
   });
 });

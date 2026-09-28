@@ -91,10 +91,11 @@ describe('selo do lote no AppShell', () => {
     excecoes_por_motivo: { sem_academico: 3, sem_socioeconomico: 2 },
   };
 
-  test('aparece com id e contagem quando a origem é a API e há um lote', () => {
+  test('aparece com id e período extraído quando a origem é a API e há um lote', () => {
     const html = renderComContexto({ ...dados, origem: 'api', lote }, '/');
     expect(html).toContain('Lote 2026-09-L01');
-    expect(html).toContain('5 exceções');
+    expect(html).toContain('período 2025.2, 2026.1');
+    expect(html).toContain('só com alunos integrados');
   });
 
   test('não aparece sem lote, mesmo com origem API', () => {
@@ -108,38 +109,33 @@ describe('selo do lote no AppShell', () => {
   });
 });
 
-const loteAberto = {
-  id: '2026-09-L01', executado_em: '2026-09-12T10:00:00Z', fechado_em: null, periodos_cobertos: ['2026.1'],
-  executado_por: null, observacao: null, ingestoes: [], excecoes_por_motivo: {},
+const loteFechado = {
+  id: '2026-09-L01', executado_em: '2026-09-12T10:00:00Z', fechado_em: '2026-09-12T11:00:00Z', periodos_cobertos: ['2025.2'],
+  executado_por: 'Edinaldo', observacao: null, ingestoes: [], excecoes_por_motivo: {},
 };
-const ingestao = (passo: number) => ({ id: passo, passo, arquivo_sha256: null, executado_em: '2026-09-12T10:00:00Z', registros_lidos: 1, registros_aceitos: 1, registros_rejeitados: 0 });
 
 describe('tela Dados', () => {
   test('sem API mostra o aviso e nenhum formulário', () => {
     const html = render('/dados');
-    expect(html).toContain('A inserção de dados exige a API');
+    expect(html).toContain('A importação de dados exige a API');
     expect(html).not.toContain('type="file"');
-    expect(html).not.toContain('Abrir lote');
   });
-  test('com API e nenhum lote começa no passo 1', () => {
+  test('com API e nenhum lote: só o formulário de importação, sem relatório', () => {
     const html = renderComContexto({ ...dados, origem: 'api', lotes: [] }, '/dados');
-    expect(html).toContain('Abrir lote');
+    expect(html).toContain('Importar históricos');
+    expect(html).toContain('Responsável pela importação');
+    expect(html).not.toContain('Relatório do lote');
   });
-  test('com API e um lote aberto sem ingestões, seleciona esse lote e mostra o passo 2', () => {
-    const html = renderComContexto({ ...dados, origem: 'api', lotes: [loteAberto], lote: loteAberto }, '/dados');
-    expect(html).toContain('type="file"');
-    expect(html).not.toContain('Cobertura do lote 2026-09-L01');
+  test('com lotes: formulário sempre disponível e relatório do mais recente selecionado', () => {
+    const anterior = { ...loteFechado, id: '2026-08-L01' };
+    const html = renderComContexto({ ...dados, origem: 'api', lotes: [anterior, loteFechado], lote: loteFechado }, '/dados');
+    expect(html).toContain('Importar históricos');
+    expect(html).toContain('Relatório do lote 2026-09-L01');
+    expect(html).toContain('2026-08-L01 · 2025.2');
   });
-  test('lote com passos 1 e 2 mostra o botão Fechar lote', () => {
-    const rodado = { ...loteAberto, ingestoes: [ingestao(1), ingestao(2)] };
-    const html = renderComContexto({ ...dados, origem: 'api', lotes: [rodado], lote: rodado }, '/dados');
-    expect(html).toContain('Fechar lote');
-  });
-  test('lote fechado mostra "Fechado em" e não mostra ação', () => {
-    const fechado = { ...loteAberto, ingestoes: [ingestao(1), ingestao(2)], fechado_em: '2026-09-12T11:00:00Z' };
-    const html = renderComContexto({ ...dados, origem: 'api', lotes: [fechado], lote: fechado }, '/dados');
-    expect(html).toContain('Fechado em');
-    expect(html).not.toContain('Fechar lote');
+  test('o fluxo antigo (abrir, enviar, fechar) sumiu da tela', () => {
+    const html = renderComContexto({ ...dados, origem: 'api', lotes: [loteFechado], lote: loteFechado }, '/dados');
+    for (const antigo of ['Abrir lote', 'Fechar lote', 'Períodos cobertos', 'Enviar e rodar']) expect(html).not.toContain(antigo);
   });
 });
 
