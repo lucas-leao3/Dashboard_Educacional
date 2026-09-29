@@ -4,6 +4,8 @@ import json
 from app.services.assistente import pipeline
 from app.services.assistente.execucao import ConsultaDemorada
 from app.services.assistente.provedor_llm import LLMIndisponivel
+from app.services.relatorio import CAMPOS_SOCIOECONOMICOS
+from conftest import historico, zip_de
 
 A, B = 202016040001, 202016040002
 
@@ -125,3 +127,44 @@ async def test_executar_nao_chama_o_llm(client, llm, semear):
 async def test_executar_consulta_fora_do_catalogo_e_422(client, llm):
     resposta = await client.post("/assistente/executar", json={"consulta": {"tipo": "agregado", "metrica": "evasao"}})
     assert resposta.status_code == 422
+
+
+# --- revisão final: entradas que davam 500 ---------------------------------
+
+async def test_executar_recusa_marcador_de_aluno(client, llm):
+    """Marcador só existe dentro de uma pergunta: numa consulta salva não há o que resolver."""
+    consulta = {"tipo": "agregado", "metrica": "contagem_alunos", "filtros": [{"campo": "matricula", "valor": "⟨A1⟩"}]}
+    resposta = await client.post("/assistente/executar", json={"consulta": consulta})
+    assert resposta.status_code == 422
+
+
+async def test_executar_recusa_matricula_longa_demais(client, llm):
+    consulta = {"tipo": "lista", "metrica": "alunos", "filtros": [{"campo": "matricula", "valor": "1" * 30}]}
+    resposta = await client.post("/assistente/executar", json={"consulta": consulta})
+    assert resposta.status_code == 422
+
+
+async def test_matriculas_coladas_na_pergunta_viram_nao_entendi(client, llm):
+    llm.respostas.append(_json(tipo="lista", metrica="alunos", filtros=[{"campo": "matricula", "valor": "⟨A1⟩"}]))
+    resposta = await _perguntar(client, f"Perfil de {A}{B}")
+    assert (resposta.status_code, resposta.json()["forma"]) == (200, "nao_entendi")
+
+
+async def test_fora_do_catalogo_com_filtro_inventado_nao_quebra(client, llm):
+    llm.respostas.append(_json(tipo="fora_do_catalogo", filtros=[{"campo": "evasao", "valor": "sim"}],
+                               interpretacao="A base não tem dado de evasão."))
+    corpo = (await _perguntar(client, "Quais alunos evadiram?")).json()
+    assert corpo["forma"] == "nao_entendi"
+    assert corpo["consulta"]["filtros"] == []
+    consulta = {"tipo": "fora_do_catalogo", "filtros": [{"campo": "evasao", "valor": {"x": 1}}]}
+    assert (await client.post("/assistente/executar", json={"consulta": consulta})).json()["forma"] == "nao_entendi"
+
+
+async def test_campos_sem_resposta_com_lote_completo_nao_diz_que_falta_lote(client, llm, importar, fontes):
+    fontes.fasitech = [{"matricula": A, "periodo": "2026.1",
+                        **{c: "x" for c in CAMPOS_SOCIOECONOMICOS}, "pcd": "Não", "tipo_deficiencia": None}]
+    fontes.historicos = {"h1": historico(A, {"2025.1": 8.0})}
+    assert (await importar(zip_de(["h1.pdf"]))).status_code == 201
+    consulta = {"tipo": "operacional", "metrica": "campos_sem_resposta"}
+    corpo = (await client.post("/assistente/executar", json={"consulta": consulta})).json()
+    assert corpo["texto"]["mensagem"] == "Nenhum campo sem resposta entre os alunos integrados."

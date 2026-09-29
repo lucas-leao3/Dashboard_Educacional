@@ -49,7 +49,12 @@ def descrever(consulta: ConsultaEstruturada) -> str:
 
 def texto_para(consulta: ConsultaEstruturada, resultado: Resultado) -> BlocoTexto:
     if not resultado.linhas:
-        vazio = "Nenhum lote importado ainda." if consulta.tipo == "operacional" else "Nenhum aluno com esses filtros."
+        if resultado.sem_lote:
+            vazio = "Nenhum lote importado ainda."
+        elif consulta.metrica == "campos_sem_resposta":
+            vazio = "Nenhum campo sem resposta entre os alunos integrados."
+        else:
+            vazio = "Nenhum aluno com esses filtros."
         return BlocoTexto(mensagem=vazio)
     linha = resultado.linhas[0]
     if consulta.metrica == "resumo_ultimo_lote":

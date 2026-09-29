@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.schemas.assistente import BlocoDashboard, ConsultaEstruturada, Explicacao, RespostaAssistente
 from app.services.assistente.anonimizador import anonimizar, nomes_da_base, restaurar
-from app.services.assistente.catalogo import validar, valores_validos
+from app.services.assistente.catalogo import matricula_valida, validar, valores_validos
 from app.services.assistente.compilador import Resultado, fontes, resolver_sql
 from app.services.assistente.intencao import interpretar
 from app.services.assistente.operacionais import resolver_operacional
@@ -35,7 +35,7 @@ def _restaurar(consulta: ConsultaEstruturada, marcadores: dict[str, str]) -> Con
         if f.campo == "matricula":
             valores = f.valor if isinstance(f.valor, list) else [f.valor]
             reais = [marcadores.get(v, v) for v in valores]
-            if not all(v.isdigit() for v in reais):
+            if not all(matricula_valida(v) for v in reais):
                 return None
             f = f.model_copy(update={"valor": reais if isinstance(f.valor, list) else reais[0]})
         filtros.append(f)
@@ -85,4 +85,4 @@ def perguntar(session: Session, provedor: ProvedorLLM, pergunta: str) -> Respost
 
 def executar(session: Session, consulta: ConsultaEstruturada) -> RespostaAssistente:
     """Reexecuta uma consulta salva (histórico, link compartilhado), sem LLM."""
-    return responder(session, validar(consulta, valores_validos(session)), None)
+    return responder(session, validar(consulta, valores_validos(session), aceita_marcador=False), None)

@@ -37,7 +37,7 @@ def _resultado(linhas: list[dict]) -> Resultado:
 def resolver_operacional(session: Session, consulta: ConsultaEstruturada) -> Resultado:
     lote_id = ultimo_lote(session)
     if lote_id is None:
-        return Resultado([], [], FONTES_RELATORIO, 0)
+        return Resultado([], [], FONTES_RELATORIO, 0, sem_lote=True)
     relatorio = relatorio_do_lote(session, lote_id)
     metrica = consulta.metrica
     if metrica == "resumo_ultimo_lote":

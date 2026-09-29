@@ -145,7 +145,9 @@ def test_textos():
                       _res([{"valor": 0, "n": 0}])).mensagem == "Nenhum aluno com esses filtros."
     assert texto_para(_c(tipo="agregado", metrica="crg_medio"),
                       _res([{"valor": 7.0, "n": 2}])).mensagem == "CRG médio de 7,00, sobre 2 aluno(s) com CRG apurado."
-    assert texto_para(_c(tipo="operacional", metrica="resumo_ultimo_lote"), _res([])).mensagem == "Nenhum lote importado ainda."
+    sem_lote = Resultado([], [], ["lote"], 0, sem_lote=True)
+    assert texto_para(_c(tipo="operacional", metrica="resumo_ultimo_lote"), sem_lote).mensagem == "Nenhum lote importado ainda."
+    assert texto_para(_c(tipo="operacional", metrica="campos_sem_resposta"), sem_lote).mensagem == "Nenhum lote importado ainda."
     resumo = {"lote": "2026-09-L02", "fechado_em": None, "registros_lidos": 10, "registros_aceitos": 9,
               "integrados": 7, "nao_integrados": 3}
     assert texto_para(_c(tipo="operacional", metrica="resumo_ultimo_lote"), _res([resumo])).mensagem == (

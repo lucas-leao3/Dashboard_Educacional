@@ -33,6 +33,8 @@ class Resultado:
     linhas: list[dict]
     fontes: list[str]
     total: int | None = None
+    #: itens operacionais: vazio porque não há lote (e não porque não há ocorrência)
+    sem_lote: bool = False
 
 
 def _condicao(coluna, dimensao: Dimensao, filtro: Filtro):

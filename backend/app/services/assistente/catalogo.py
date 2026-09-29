@@ -89,7 +89,14 @@ _METRICAS = [
 METRICAS = {m.id: m for m in _METRICAS}
 
 _ENTRE = frozenset({"turma", "periodo", "semestre"})
-_MATRICULA = re.compile(r"⟨A\d+⟩|\d{9,}")
+_MARCADOR = re.compile(r"⟨A\d+⟩")
+# Matrícula real tem 12 dígitos; 18 é o teto que cabe no bigint da coluna.
+# Mais que isso é engano (duas matrículas coladas) e viraria erro no banco.
+_DIGITOS_MATRICULA = re.compile(r"\d{9,18}")
+
+
+def matricula_valida(valor: str) -> bool:
+    return bool(_DIGITOS_MATRICULA.fullmatch(valor))
 
 
 def normalizar(texto: str) -> str:
@@ -113,11 +120,17 @@ def valores_validos(session: Session) -> dict[str, list[str]]:
     return valores
 
 
-def validar(consulta: ConsultaEstruturada, valores: dict[str, list[str]]) -> ConsultaEstruturada:
+def validar(consulta: ConsultaEstruturada, valores: dict[str, list[str]],
+            aceita_marcador: bool = True) -> ConsultaEstruturada:
     """Confere a consulta contra o catálogo e devolve uma cópia com os valores de
-    filtro na grafia canônica ("cameta" -> "Cametá"). Levanta ConsultaInvalida."""
+    filtro na grafia canônica ("cameta" -> "Cametá"). Levanta ConsultaInvalida.
+
+    `aceita_marcador=False` para consulta que não veio de uma pergunta
+    (/executar): lá não há mapa de marcadores para resolver ⟨An⟩."""
     if consulta.tipo == "fora_do_catalogo":
-        return consulta
+        # Nada dela é executado nem descrito além da interpretação: o resto,
+        # que pode citar campo inexistente ("evasao"), é descartado.
+        return ConsultaEstruturada(tipo="fora_do_catalogo", interpretacao=consulta.interpretacao)
     metrica = METRICAS.get(consulta.metrica or "")
     if metrica is None or metrica.tipo != consulta.tipo:
         aceitas = ", ".join(m.id for m in _METRICAS if m.tipo == consulta.tipo)
@@ -133,11 +146,12 @@ def validar(consulta: ConsultaEstruturada, valores: dict[str, list[str]]) -> Con
         raise ConsultaInvalida(f"{metrica.id} exige a dimensão {metrica.exige_dimensao!r}")
     if consulta.ordem and consulta.ordem.campo not in {"valor", *consulta.dimensoes}:
         raise ConsultaInvalida("ordem.campo deve ser 'valor' ou uma dimensão da consulta")
-    filtros = [_validar_filtro(f, metrica, valores) for f in consulta.filtros]
+    filtros = [_validar_filtro(f, metrica, valores, aceita_marcador) for f in consulta.filtros]
     return consulta.model_copy(update={"filtros": filtros})
 
 
-def _validar_filtro(filtro: Filtro, metrica: Metrica, valores: dict[str, list[str]]) -> Filtro:
+def _validar_filtro(filtro: Filtro, metrica: Metrica, valores: dict[str, list[str]],
+                    aceita_marcador: bool) -> Filtro:
     if filtro.campo not in metrica.filtros:
         raise ConsultaInvalida(f"filtro {filtro.campo!r} não se aplica a {metrica.id}; aceitos: {sorted(metrica.filtros)}")
     brutos = filtro.valor if isinstance(filtro.valor, list) else [filtro.valor]
@@ -149,8 +163,8 @@ def _validar_filtro(filtro: Filtro, metrica: Metrica, valores: dict[str, list[st
         raise ConsultaInvalida(f"op 'entre' só vale para {sorted(_ENTRE)} e recebe [início, fim]")
     if filtro.campo == "matricula":
         canonicos = [str(v) for v in brutos]
-        if not all(_MATRICULA.fullmatch(v) for v in canonicos):
-            raise ConsultaInvalida("matricula aceita só marcadores ⟨An⟩")
+        if not all(matricula_valida(v) or (aceita_marcador and _MARCADOR.fullmatch(v)) for v in canonicos):
+            raise ConsultaInvalida("matricula aceita só marcadores ⟨An⟩ presentes na pergunta")
     else:
         canonicos = [_canonico(filtro.campo, str(v), valores) for v in brutos]
     return Filtro(campo=filtro.campo, op=filtro.op, valor=canonicos[0] if filtro.op == "=" else canonicos)
