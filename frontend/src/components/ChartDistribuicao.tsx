@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import {
   Bar, BarChart, CartesianGrid, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
@@ -7,6 +7,7 @@ import BotaoIA from './ui/BotaoIA';
 import { agregar, N_MINIMO } from '../domain/agregacao';
 import { histogramaCrg } from '../domain/analises';
 import { useDados } from '../hooks/useDados';
+import { useFiltroUrl } from '../hooks/useFiltroUrl';
 import { TODOS } from '../domain/filtros';
 
 /**
@@ -19,7 +20,7 @@ import { TODOS } from '../domain/filtros';
  */
 export default function ChartDistribuicao() {
   const { alunos } = useDados();
-  const [polo, setPolo] = useState(TODOS);
+  const [polo, setPolo] = useFiltroUrl('polo', TODOS);
 
   const polos = useMemo(() => [TODOS, ...new Set(alunos.map((a) => a.polo))].sort(), [alunos]);
   const filtrados = useMemo(

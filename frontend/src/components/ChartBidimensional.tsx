@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import {
   Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
@@ -8,6 +8,7 @@ import AvisoAmostra from './ui/AvisoAmostra';
 import { EIXOS_X, eixo, mediaCrgPorCategoria } from '../domain/analises';
 import type { BarraCategoria } from '../domain/analises';
 import { useDados } from '../hooks/useDados';
+import { useFiltroUrl } from '../hooks/useFiltroUrl';
 import { TODOS } from '../domain/filtros';
 
 interface PropsTick {
@@ -37,8 +38,8 @@ function TickCategoria({ x = 0, y = 0, payload, barras = [] }: PropsTick) {
  */
 export default function ChartBidimensional() {
   const { alunos } = useDados();
-  const [eixoX, setEixoX] = useState('cor_etnia');
-  const [polo, setPolo] = useState(TODOS);
+  const [eixoX, setEixoX] = useFiltroUrl('dimensao', 'cor_etnia');
+  const [polo, setPolo] = useFiltroUrl('polo', TODOS);
 
   const polos = useMemo(() => [TODOS, ...new Set(alunos.map((a) => a.polo))].sort(), [alunos]);
   const filtrados = useMemo(

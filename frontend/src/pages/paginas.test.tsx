@@ -187,6 +187,16 @@ describe('telas de Análises (nenhuma delas pode voltar a usar número fixo)', (
     const html = render('/analises/bidimensional');
     expect(html).toContain(String(alunos.length));   // Matrículas Únicas
   });
+
+  test('Bidimensional abre com a dimensão e o polo da URL', () => {
+    const html = render('/analises/bidimensional?dimensao=renda&polo=Camet%C3%A1');
+    expect(html).toMatch(/<option value="renda" selected="">/);
+    expect(html).toMatch(/<option value="Cametá" selected="">/);
+  });
+  test('Distribuição e Longitudinal abrem com o polo da URL', () => {
+    expect(render('/analises/distribuicao?polo=Oeiras')).toMatch(/<option value="Oeiras" selected="">/);
+    expect(render('/analises/longitudinal?polo=Oeiras')).toMatch(/<option value="Oeiras" selected="">/);
+  });
 });
 
 describe('identificação do aluno é a mesma em toda tela', () => {

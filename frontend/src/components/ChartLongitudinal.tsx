@@ -7,6 +7,7 @@ import BotaoIA from './ui/BotaoIA';
 import { serieLongitudinal } from '../domain/analises';
 import { identificacao } from '../domain/aluno';
 import { useDados } from '../hooks/useDados';
+import { useFiltroUrl } from '../hooks/useFiltroUrl';
 import { TODOS } from '../domain/filtros';
 import { COR_PRIMARIA, corDaTurma } from '../theme/cores';
 
@@ -23,8 +24,8 @@ import { COR_PRIMARIA, corDaTurma } from '../theme/cores';
  */
 export default function ChartLongitudinal() {
   const { alunos, crgSemestres } = useDados();
-  const [polo, setPolo] = useState(TODOS);
-  const [turma, setTurma] = useState(TODOS);
+  const [polo, setPolo] = useFiltroUrl('polo', TODOS);
+  const [turma, setTurma] = useFiltroUrl('turma', TODOS);
   const [matricula, setMatricula] = useState(TODOS);
 
   const polos = useMemo(() => [TODOS, ...new Set(alunos.map((a) => a.polo))].sort(), [alunos]);

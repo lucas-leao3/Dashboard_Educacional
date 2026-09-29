@@ -1,5 +1,6 @@
 import { createContext, useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { carregarCrgSemestres, carregarLotes, carregarRegistros } from '../data/api';
 import type { Origem } from '../data/api';
 import type { CrgSemestre, Lote, Registro } from '../data/tipos';
@@ -52,6 +53,15 @@ export function DadosProvider({ children }: { children: ReactNode }) {
   const [periodo, setPeriodo] = useState(TODOS_PERIODOS);
   const [lotes, setLotes] = useState<Lote[]>([]);
   const [crgSemestres, setCrgSemestres] = useState<CrgSemestre[]>([]);
+
+  // O período também pode chegar pela URL (?periodo=), quando o assistente abre
+  // uma tela filtrada. Links internos não levam o parâmetro, então navegar
+  // entre telas mantém o período escolhido no seletor.
+  const [params] = useSearchParams();
+  const periodoDaUrl = params.get('periodo');
+  useEffect(() => {
+    if (periodoDaUrl !== null) setPeriodo(periodoDaUrl);
+  }, [periodoDaUrl]);
 
   const recarregar = useCallback(async () => {
     const [r, ls, cs] = await Promise.all([carregarRegistros(), carregarLotes(), carregarCrgSemestres()]);
