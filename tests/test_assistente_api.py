@@ -116,6 +116,14 @@ async def test_nada_que_identifica_aluno_sai_para_o_llm(client, llm, semear):
     assert len(llm.chamadas) == 1  # resultado nunca volta ao modelo
 
 
+async def test_nome_parcial_e_matricula_com_pontos_tambem_nao_saem(client, llm, semear):
+    semear(A, nome="MARIA DA SILVA SANTOS")
+    llm.respostas.append(_json(tipo="lista", metrica="alunos", filtros=[{"campo": "matricula", "valor": "⟨A1⟩"}]))
+    await _perguntar(client, "A Maria Santos tem ansiedade? matrícula 2020.1604.0001")
+    enviado = json.dumps(llm.chamadas[0][-1], ensure_ascii=False).lower()
+    assert "maria" not in enviado and "santos" not in enviado and "1604" not in enviado
+
+
 async def test_executar_nao_chama_o_llm(client, llm, semear):
     semear(A, renda="Até 1 salário mínimo")
     consulta = {"tipo": "agregado", "metrica": "contagem_alunos", "dimensoes": ["renda"]}
