@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.api.alunos import router as alunos_router
+from app.api.assistente import router as assistente_router
 from app.api.crg import router as crg_router
 from app.api.lotes import router as lotes_router
 
@@ -18,6 +19,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Dashboard Educacional API", lifespan=lifespan)
 
 app.include_router(alunos_router)
+app.include_router(assistente_router)
 app.include_router(crg_router)
 app.include_router(lotes_router)
 

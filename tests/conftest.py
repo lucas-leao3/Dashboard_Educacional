@@ -232,3 +232,34 @@ def importar(client):
             "/lotes/importar", data=dados, files={"arquivo": (nome, conteudo, "application/zip")},
         )
     return _importar
+
+
+# ---------------------------------------------------------------------------
+# Assistente: LLM falsificado. Nenhum teste da suíte padrão chama o Groq.
+# ---------------------------------------------------------------------------
+
+class ProvedorFalso:
+    """Devolve `respostas` em ordem (texto, ou exceção a levantar) e guarda em
+    `chamadas` cada lista de mensagens recebida -- é por ela que os testes
+    conferem o que sairia da máquina."""
+
+    def __init__(self, *respostas):
+        self.respostas = list(respostas)
+        self.chamadas: list[list[dict]] = []
+
+    def completar(self, mensagens):
+        self.chamadas.append(mensagens)
+        resposta = self.respostas.pop(0)
+        if isinstance(resposta, Exception):
+            raise resposta
+        return resposta
+
+
+@pytest.fixture()
+def llm(client):
+    """O provedor falso no lugar do Groq; `llm.respostas.append(...)` define o que ele diz."""
+    from app.api.assistente import obter_provedor
+
+    falso = ProvedorFalso()
+    app.dependency_overrides[obter_provedor] = lambda: falso
+    return falso
