@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { carregarLotes, carregarRegistros } from './api';
+import { carregarLotes, carregarRegistros, executarConsulta, perguntarAssistente } from './api';
 import { registro } from '../test/fixtures';
 
 describe('carregarRegistros', () => {
@@ -110,5 +110,28 @@ describe('escrita na API (importarLote)', () => {
     const fetchFalso = async (u: string | URL | Request) => { url = String(u); return new Response(JSON.stringify(relatorio), { status: 200 }); };
     expect(await carregarRelatorio('2026-09-L02', { baseUrl: '/api', fetchFn: fetchFalso })).toEqual(relatorio);
     expect(url).toBe('/api/lotes/2026-09-L02/relatorio');
+  });
+});
+
+describe('assistente', () => {
+  test('pergunta por POST em JSON', async () => {
+    // Objeto, e não `let`: o TS estreitaria um `let x = null` atribuído dentro do callback para `never`.
+    const visto: { url?: string; init?: RequestInit } = {};
+    const fetchFalso = async (url: RequestInfo | URL, init?: RequestInit) => {
+      visto.url = String(url);
+      visto.init = init;
+      return new Response(JSON.stringify({ id: 'r1' }), { status: 200 });
+    };
+    const resposta = await perguntarAssistente('Quantos alunos?', { baseUrl: '/api', fetchFn: fetchFalso as typeof fetch });
+    expect(resposta.id).toBe('r1');
+    expect(visto.url).toBe('/api/assistente/perguntar');
+    expect(visto.init?.method).toBe('POST');
+    expect(JSON.parse(String(visto.init?.body))).toEqual({ pergunta: 'Quantos alunos?' });
+  });
+  test('503 vira ErroApi com o detail', async () => {
+    const fetchFalso = async () => new Response(JSON.stringify({ detail: 'Groq respondeu HTTP 429.' }), { status: 503 });
+    await expect(executarConsulta({} as never, { baseUrl: '/api', fetchFn: fetchFalso })).rejects.toMatchObject({
+      status: 503, detail: 'Groq respondeu HTTP 429.',
+    });
   });
 });

@@ -138,3 +138,67 @@ export interface Relatorio {
   integrados: LinhaIntegrada[];
   nao_integrados: LinhaNaoIntegrada[];
 }
+
+/* Assistente de consultas: espelho de backend/app/schemas/assistente.py */
+
+export type FormaResposta = 'dashboard' | 'dinamico' | 'tabela' | 'texto' | 'nao_entendi';
+
+export interface FiltroConsulta {
+  campo: string;
+  op: '=' | 'in' | 'entre';
+  valor: string | string[];
+}
+
+export interface ConsultaEstruturada {
+  tipo: 'agregado' | 'lista' | 'operacional' | 'fora_do_catalogo';
+  metrica: string | null;
+  dimensoes: string[];
+  filtros: FiltroConsulta[];
+  ordem: { campo: string; direcao: 'asc' | 'desc' } | null;
+  limite: number | null;
+  interpretacao: string;
+}
+
+export interface ExplicacaoAssistente {
+  consulta_interpretada: string;
+  filtros_aplicados: { rotulo: string; valor: string }[];
+  fontes: string[];
+  forma: FormaResposta;
+}
+
+export type Celula = string | number | null;
+
+export interface GraficoDinamico {
+  tipo: 'barras' | 'barras_empilhadas' | 'barras_agrupadas' | 'linha' | 'rosca' | 'histograma';
+  titulo: string;
+  eixo: string;
+  serie: string | null;
+  series: string[];
+  serie_ordinal: boolean;
+  rotulo_valor: string;
+  dados: Record<string, Celula>[];
+}
+
+export interface BlocoDinamico {
+  kpis: { rotulo: string; valor: number | null; n: number }[];
+  graficos: GraficoDinamico[];
+}
+
+export interface BlocoTabela {
+  colunas: { id: string; rotulo: string }[];
+  linhas: Record<string, Celula>[];
+  total: number;
+}
+
+export interface RespostaAssistente {
+  id: string;
+  pergunta: string | null;
+  consulta: ConsultaEstruturada | null;
+  forma: FormaResposta;
+  explicacao: ExplicacaoAssistente;
+  dashboard: { id: string; params: Record<string, string> } | null;
+  dinamico: BlocoDinamico | null;
+  tabela: BlocoTabela | null;
+  texto: { mensagem: string; valor: number | null; n: number | null } | null;
+  nao_entendi: { motivo: string; sugestoes: string[] } | null;
+}

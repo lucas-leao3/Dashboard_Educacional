@@ -13,7 +13,7 @@ export const COR_SINALIZACAO: Record<Sinalizacao, { hex: string; texto: string; 
 };
 
 /** Paleta categórica (identidade), em ordem fixa. Validada: CVD ΔE ≥ 8. */
-const PALETA_CATEGORICA = ['#2563eb', '#c2410c', '#7c3aed', '#0d9488'] as const;
+export const PALETA_CATEGORICA = ['#2563eb', '#c2410c', '#7c3aed', '#0d9488'] as const;
 
 /**
  * A cor segue a entidade, não a posição no ranking: o mesmo polo tem sempre

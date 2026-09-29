@@ -1,5 +1,5 @@
 import { crgSemestresDemonstracao, registrosDemonstracao } from './mockData';
-import type { CrgSemestre, ImportacaoOut, Lote, Registro, Relatorio } from './tipos';
+import type { ConsultaEstruturada, CrgSemestre, ImportacaoOut, Lote, Registro, Relatorio, RespostaAssistente } from './tipos';
 
 export type Origem = 'api' | 'demonstracao';
 
@@ -122,4 +122,16 @@ export function importarLote(responsavel: string, arquivo: File, opcoes: Opcoes 
 
 export function carregarRelatorio(id: string, opcoes: Opcoes = {}): Promise<Relatorio> {
   return chamar(`/lotes/${encodeURIComponent(id)}/relatorio`, {}, opcoes) as Promise<Relatorio>;
+}
+
+const JSON_POST = { method: 'POST', headers: { 'Content-Type': 'application/json' } } as const;
+
+/** POST /assistente/perguntar: a pergunta em português; a API anonimiza antes do LLM. */
+export function perguntarAssistente(pergunta: string, opcoes: Opcoes = {}): Promise<RespostaAssistente> {
+  return chamar('/assistente/perguntar', { ...JSON_POST, body: JSON.stringify({ pergunta }) }, opcoes) as Promise<RespostaAssistente>;
+}
+
+/** POST /assistente/executar: reexecuta uma consulta salva, sem LLM (histórico, link). */
+export function executarConsulta(consulta: ConsultaEstruturada, opcoes: Opcoes = {}): Promise<RespostaAssistente> {
+  return chamar('/assistente/executar', { ...JSON_POST, body: JSON.stringify({ consulta }) }, opcoes) as Promise<RespostaAssistente>;
 }
