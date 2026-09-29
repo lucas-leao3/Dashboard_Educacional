@@ -47,6 +47,16 @@ class ProvedorGroq:
             )
         except httpx.HTTPError as erro:
             raise LLMIndisponivel(f"Groq inacessível ({erro.__class__.__name__}).") from erro
+        if resposta.status_code == 400:
+            # JSON mode: o que o modelo gerou fora do formato volta como 400
+            # json_validate_failed. É uma resposta inválida (intencao.py tenta de
+            # novo e depois responde "não entendi"), não o Groq fora do ar.
+            try:
+                erro = resposta.json().get("error") or {}
+            except ValueError:
+                erro = {}
+            if isinstance(erro, dict) and erro.get("code") == "json_validate_failed":
+                return str(erro.get("failed_generation") or "")
         if resposta.status_code != 200:
             raise LLMIndisponivel(f"Groq respondeu HTTP {resposta.status_code}.")
         try:

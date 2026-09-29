@@ -47,6 +47,21 @@ def test_resposta_sem_choices_vira_indisponivel():
         _groq(lambda req: httpx.Response(200, json={"erro": "x"})).completar([])
 
 
+def test_json_invalido_do_modelo_volta_como_resposta_para_a_nova_tentativa():
+    """Em JSON mode o Groq recusa com 400 json_validate_failed o que o modelo gerou
+    fora do formato. Isso é resposta inválida (nova tentativa, depois "não
+    entendi"), não Groq fora do ar (503)."""
+    corpo = {"error": {"code": "json_validate_failed", "failed_generation": "Claro! aqui vai"}}
+    assert _groq(lambda req: httpx.Response(400, json=corpo)).completar([]) == "Claro! aqui vai"
+    sem_geracao = {"error": {"code": "json_validate_failed"}}
+    assert _groq(lambda req: httpx.Response(400, json=sem_geracao)).completar([]) == ""
+
+
+def test_outro_400_continua_indisponivel():
+    with pytest.raises(LLMIndisponivel, match="400"):
+        _groq(lambda req: httpx.Response(400, json={"error": {"code": "model_not_found"}})).completar([])
+
+
 def test_sem_chave_nao_chama_a_rede():
     def handler(req):
         raise AssertionError("não devia chamar a rede")
