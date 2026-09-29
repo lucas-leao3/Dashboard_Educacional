@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
 import type { FocusEvent, FormEvent, ReactNode } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import Sidebar from '../Sidebar';
 import SeloLote from '../SeloLote';
 import IdentificacaoAluno from '../ui/IdentificacaoAluno';
 import SelectDropdown from '../ui/SelectDropdown';
+import type { ExplicacaoAssistente } from '../../data/tipos';
 import { buscarAlunos } from '../../domain/busca';
 import { TODOS_PERIODOS, useDados } from '../../hooks/useDados';
 
@@ -45,6 +46,8 @@ export default function AppShell({ titulo, subtitulo, migalhas = [], semFiltros 
   const [listaAberta, setListaAberta] = useState(false);
   const { periodos, periodo, setPeriodo, origem, carregando, alunosTodos, registros, lote } = useDados();
   const navigate = useNavigate();
+  // Tela aberta pelo assistente: mostra o que ele entendeu e aplicou.
+  const assistente = (useLocation().state as { assistente?: ExplicacaoAssistente } | null)?.assistente;
 
   // Busca por TRECHO do nome ou da matrícula (ver domain/busca.ts). Como um
   // termo casa com vários alunos, a caixa lista os resultados em vez de pular
@@ -171,6 +174,15 @@ export default function AppShell({ titulo, subtitulo, migalhas = [], semFiltros 
               A API respondeu, mas ainda não há registros no banco. Abra um lote e execute os passos de ingestão
               (<code>POST /lotes</code>, <code>/alunos/sincronizar</code>, <code>/alunos/atualizar-crg</code>) — ver <code>API_README.md</code>.
             </p>
+          )}
+          {assistente && (
+            <div role="status" className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+              <p><strong>Aberto pelo assistente:</strong> {assistente.consulta_interpretada}</p>
+              <p className="mt-1 text-xs">
+                Filtros: {assistente.filtros_aplicados.length ? assistente.filtros_aplicados.map((f) => `${f.rotulo}: ${f.valor}`).join(' · ') : 'nenhum'}
+                {' · '}Fonte: {assistente.fontes.join(', ')}
+              </p>
+            </div>
           )}
           {carregando ? <p className="text-sm text-slate-500" aria-live="polite">Carregando dados…</p> : children}
         </main>

@@ -9,21 +9,7 @@ import Alunos from './pages/Alunos'
 import Perfil from './pages/Perfil'
 import Analises from './pages/Analises'
 import Dados from './pages/Dados'
-import AppShell from './components/layout/AppShell'
-
-// Placeholder para rotas futuras
-function EmConstrucao({ titulo }: { titulo: string }) {
-  return (
-    <AppShell titulo={titulo} migalhas={[{ rotulo: titulo }]} semFiltros>
-      <div className="flex h-full items-center justify-center">
-        <div className="text-center">
-          <p className="text-6xl mb-4" aria-hidden="true">🚧</p>
-          <p className="text-slate-400 mt-2">Em construção...</p>
-        </div>
-      </div>
-    </AppShell>
-  )
-}
+import IaChat from './pages/IaChat'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -46,7 +32,8 @@ createRoot(document.getElementById('root')!).render(
           <Route path="/distribuicao" element={<Navigate to="/analises/distribuicao" replace />} />
           <Route path="/longitudinal" element={<Navigate to="/analises/longitudinal" replace />} />
 
-          <Route path="/ia-chat" element={<EmConstrucao titulo="IA Chat" />} />
+          {/* Assistente de consultas (docs/superpowers/specs/2026-09-25-assistente-consultas-design.md) */}
+          <Route path="/ia-chat" element={<IaChat />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </DadosProvider>

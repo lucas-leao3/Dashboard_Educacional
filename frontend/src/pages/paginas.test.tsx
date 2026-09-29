@@ -12,6 +12,7 @@ import Alunos from './Alunos';
 import Perfil from './Perfil';
 import PaginaDados from './Dados';
 import Analises from './Analises';
+import IaChat from './IaChat';
 
 const alunos = consolidarAlunos(registrosDemonstracao);
 const dados: Dados = {
@@ -35,6 +36,7 @@ function renderComContexto(contexto: Dados, rota: string) {
           <Route path="/analises/bidimensional" element={<Analises tipo="bidimensional" />} />
           <Route path="/analises/distribuicao" element={<Analises tipo="distribuicao" />} />
           <Route path="/analises/longitudinal" element={<Analises tipo="longitudinal" />} />
+          <Route path="/ia-chat" element={<IaChat />} />
         </Routes>
       </MemoryRouter>
     </Contexto.Provider>,
@@ -255,3 +257,21 @@ describe('busca do cabeçalho', () => {
   });
 });
 
+describe('assistente de consultas', () => {
+  test('IA Chat avisa que precisa da API em modo demonstração', () => {
+    expect(render('/ia-chat')).toContain('modo demonstração');
+  });
+  test('tela aberta pelo assistente mostra o que foi aplicado', () => {
+    const html = renderToString(
+      <Contexto.Provider value={dados}>
+        <MemoryRouter initialEntries={[{ pathname: '/', state: { assistente: {
+          consulta_interpretada: 'Contagem de alunos por Polo', filtros_aplicados: [{ rotulo: 'Período', valor: '2025.(3 e 4)' }],
+          fontes: ['aluno_integrado'], forma: 'dashboard' } } }]}>
+          <Routes><Route path="/" element={<Polos />} /></Routes>
+        </MemoryRouter>
+      </Contexto.Provider>,
+    ).replace(/<!-- -->/g, '');
+    expect(html).toContain('Aberto pelo assistente');
+    expect(html).toContain('Período: 2025.(3 e 4)');
+  });
+});
