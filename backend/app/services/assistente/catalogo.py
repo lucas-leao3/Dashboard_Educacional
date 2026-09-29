@@ -162,3 +162,44 @@ def _canonico(campo: str, valor: str, valores: dict[str, list[str]]) -> str:
         return por_forma[normalizar(valor)]
     except KeyError:
         raise ConsultaInvalida(f"valor {valor!r} não existe em {campo}; valores: {valores.get(campo, [])}") from None
+
+
+@dataclass(frozen=True)
+class Dashboard:
+    """Um dashboard existente e as consultas que ele já responde. A rota fica no
+    front (domain/catalogoDashboards.ts): aqui só o id e os parâmetros."""
+    id: str
+    rotulo: str
+    tipo: str
+    metricas: frozenset[str]
+    dimensoes: tuple[frozenset[str], ...]  # conjuntos de dimensões aceitos
+    obrigatorios: frozenset[str] = frozenset()
+    opcionais: frozenset[str] = frozenset()
+    param_dimensao: str | None = None  # parâmetro de URL que recebe a dimensão
+
+
+_CONTAGEM_OU_CRG = frozenset({"contagem_alunos", "crg_medio"})
+_PERIODO = frozenset({"periodo"})
+_SEM_DIMENSAO = (frozenset(),)
+
+# A ordem importa: o primeiro que casa ganha (contagem por polo -> Polos, não Bidimensional).
+DASHBOARDS = (
+    Dashboard("polos", "Visão Geral dos Polos", "agregado", _CONTAGEM_OU_CRG, (frozenset({"polo"}),), opcionais=_PERIODO),
+    Dashboard("turmas", "Turmas do polo", "agregado", _CONTAGEM_OU_CRG, (frozenset({"turma"}),),
+              obrigatorios=frozenset({"polo"}), opcionais=_PERIODO),
+    Dashboard("turmas", "Turmas do polo", "lista", frozenset({"alunos"}), _SEM_DIMENSAO,
+              obrigatorios=frozenset({"polo"}), opcionais=_PERIODO),
+    Dashboard("alunos_turma", "Alunos da turma", "lista", frozenset({"alunos"}), _SEM_DIMENSAO,
+              obrigatorios=frozenset({"polo", "turma"}), opcionais=_PERIODO),
+    Dashboard("perfil", "Perfil do aluno", "lista", frozenset({"alunos"}), _SEM_DIMENSAO,
+              obrigatorios=frozenset({"matricula"})),
+    # Os eixos que a tela Bidimensional oferece (domain/analises.ts, EIXOS_X).
+    Dashboard("bidimensional", "Análise Bidimensional", "agregado", frozenset({"crg_medio"}),
+              tuple(frozenset({e}) for e in ("cor_etnia", "genero", "renda", "trabalho", "polo", "turma")),
+              opcionais=frozenset({"polo", "periodo"}), param_dimensao="dimensao"),
+    Dashboard("distribuicao", "Distribuição do CRG", "agregado", frozenset({"distribuicao_crg"}), _SEM_DIMENSAO,
+              opcionais=frozenset({"polo", "periodo"})),
+    # O longitudinal não segue o filtro de período: o eixo é o semestre letivo.
+    Dashboard("longitudinal", "Análise Longitudinal", "agregado", frozenset({"crg_medio_semestre"}),
+              (frozenset({"semestre"}), frozenset({"semestre", "turma"})), opcionais=frozenset({"polo", "turma"})),
+)
