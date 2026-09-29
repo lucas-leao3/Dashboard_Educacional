@@ -293,6 +293,21 @@ Todos os arquivos abaixo foram desenvolvidos especificamente para esta API — `
 
 Em erro na importação, nada é gravado.
 
+## Assistente de consultas — `POST /assistente/perguntar`, `POST /assistente/executar`
+
+Pergunta em português → resposta na forma mais adequada (`dashboard`, `dinamico`, `tabela`, `texto` ou `nao_entendi`), sempre com `explicacao` (consulta interpretada, filtros, fontes, forma). Desenho: `docs/superpowers/specs/2026-09-25-assistente-consultas-design.md`.
+
+```bash
+curl -X POST localhost:8000/assistente/perguntar -H 'Content-Type: application/json' -d '{"pergunta": "Compare renda familiar por polo"}'
+```
+
+- **O que sai para o Groq:** só a pergunta, com nome e matrícula trocados por `⟨A1⟩`, e o catálogo de campos. Nunca linha de aluno nem resultado.
+- **SQL:** montado pelo backend a partir da `consulta` (o modelo não escreve SQL) e executado com a role `leitor_assistente` (só `SELECT` em `aluno_integrado` e `crg_semestre_vigente`), com timeout de 5 s.
+- `POST /assistente/executar {"consulta": {...}}` reexecuta uma `consulta` salva sem LLM (histórico e link compartilhado). Uma consulta fora do catálogo recebe 422.
+- **Erros:** 503 LLM indisponível (sem `GROQ_API_KEY`, fora do ar, 429); 504 consulta passou de 5 s.
+- **Configuração:** `GROQ_API_KEY`, `GROQ_MODELO`, `GROQ_URL` em `backend/.env` (ver `.env.example`).
+- **Avaliação:** `AVALIAR_LLM=1 pytest tests/test_assistente_avaliacao.py -s` mede a taxa de acerto da interpretação.
+
 ## Próximas Etapas
 
 - [ ] Importar os históricos que faltam (55 matrículas do L01)

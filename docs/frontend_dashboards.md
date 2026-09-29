@@ -49,8 +49,13 @@ Antes era igualdade exata contra o nome cru. Como a tela passou a mostrar o nome
 | `/aluno/:matricula` | Perfil individual: 4 dimensões detalhadas + trajetória por dimensão | 6, 7 |
 | `/dados` | Importação (responsável + `.zip`; o lote termina fechado) + relatórios do lote: não integrados (com motivo) e integrados, ambos com campos sem resposta e % de preenchimento | `docs/governanca_simplificada.md` |
 | `/analises/*` | Gráficos agregados do dashboard anterior (Bidimensional, Distribuição, Longitudinal) | — |
+| `/ia-chat` | Assistente de consultas: pergunta em português → dashboard filtrado, gráfico dinâmico, tabela ou texto, com explicação e histórico local | `docs/superpowers/specs/2026-09-25-assistente-consultas-design.md` |
 
 Filtros globais no cabeçalho: **Período** (item 9) e **busca por matrícula** (complementar, item 3).
+
+### Filtros na URL
+
+As telas que o assistente abre leem os filtros da query string: `?periodo=` (global, em qualquer tela), `/analises/bidimensional?dimensao=&polo=`, `/analises/distribuicao?polo=`, `/analises/longitudinal?polo=&turma=`. Mudar o filtro na tela atualiza a URL, então copiar o endereço compartilha a visão. Quando a tela foi aberta pelo assistente, o cabeçalho mostra a faixa "Aberto pelo assistente" com a consulta, os filtros e a fonte.
 
 ## Decisões
 

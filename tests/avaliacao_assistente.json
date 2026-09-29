@@ -1,0 +1,23 @@
+{
+  "valores": {
+    "polo": ["Cametá", "Limoeiro", "Oeiras", "Sem polo informado"],
+    "turma": ["2019", "2020", "2021", "2022", "2023", "2024", "2025", "Sem turma informada"],
+    "periodo": ["2025.(1 e 2)", "2025.(3 e 4)"],
+    "semestre": ["2023.1", "2023.2", "2024.1", "2024.2", "2025.1", "2025.2"],
+    "renda": ["Até 1 salário mínimo", "De 1 a 2 salários mínimos", "De 2 a 3 salários mínimos", "Acima de 3 salários mínimos", "Sem resposta"],
+    "motivo": ["falha_identificacao", "matricula_nao_encontrada", "sem_academico", "sem_socioeconomico"]
+  },
+  "casos": [
+    {"pergunta": "Quantos alunos existem por polo?", "esperado": {"tipo": "agregado", "metrica": "contagem_alunos", "dimensoes": ["polo"]}},
+    {"pergunta": "Mostre os alunos do polo de Cametá.", "esperado": {"tipo": "lista", "metrica": "alunos", "filtros": [{"campo": "polo", "valor": "Cametá"}]}},
+    {"pergunta": "Qual a distribuição de renda familiar dos alunos?", "esperado": {"tipo": "agregado", "metrica": "contagem_alunos", "dimensoes": ["renda"]}},
+    {"pergunta": "Quantos alunos ingressaram em 2020?", "esperado": {"tipo": "agregado", "metrica": "contagem_alunos", "filtros": [{"campo": "turma", "valor": "2020"}]}},
+    {"pergunta": "Quais polos possuem maior evasão?", "esperado": {"tipo": "fora_do_catalogo"}},
+    {"pergunta": "Mostre a evolução dos indicadores acadêmicos por semestre.", "esperado": {"tipo": "agregado", "metrica": "crg_medio_semestre", "dimensoes": ["semestre"]}},
+    {"pergunta": "Compare renda familiar por polo.", "esperado": {"tipo": "agregado", "metrica": "contagem_alunos", "dimensoes": ["polo", "renda"]}},
+    {"pergunta": "Liste os alunos com dados incompletos.", "esperado": {"tipo": "lista", "metrica": "alunos_incompletos"}},
+    {"pergunta": "Quais alunos não possuem dados socioeconômicos?", "esperado": {"tipo": "lista", "metrica": "nao_integrados", "filtros": [{"campo": "motivo", "valor": "sem_socioeconomico"}]}},
+    {"pergunta": "Quantos registros foram integrados no último lote?", "esperado": {"tipo": "operacional", "metrica": "resumo_ultimo_lote"}},
+    {"pergunta": "Quais campos possuem mais respostas ausentes?", "esperado": {"tipo": "operacional", "metrica": "campos_sem_resposta"}}
+  ]
+}
