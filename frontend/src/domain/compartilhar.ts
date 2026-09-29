@@ -1,4 +1,5 @@
-import type { ConsultaEstruturada } from '../data/tipos';
+import { ErroApi } from '../data/api';
+import type { ConsultaEstruturada, RespostaAssistente } from '../data/tipos';
 import type { ItemHistorico } from './historico';
 
 /** base64url do JSON em UTF-8: cabe na URL e aguenta acento. */
@@ -18,6 +19,26 @@ export function decodificarConsulta(codigo: string): ConsultaEstruturada | null 
     return lido as ConsultaEstruturada;
   } catch {
     return null;
+  }
+}
+
+export const LINK_INVALIDO = 'Link de consulta inválido.';
+
+/**
+ * Reexecuta a consulta de um link `?c=`. Link que não decodifica, ou que o
+ * backend recusa (422: fora do catálogo), vira uma mensagem só, em vez do
+ * erro de validação cru; os demais erros (API fora) passam como vieram.
+ */
+export async function executarDoLink(
+  codigo: string, executar: (consulta: ConsultaEstruturada) => Promise<RespostaAssistente>,
+): Promise<RespostaAssistente> {
+  const consulta = decodificarConsulta(codigo);
+  if (!consulta) throw new ErroApi(422, LINK_INVALIDO);
+  try {
+    return await executar(consulta);
+  } catch (e) {
+    if (e instanceof ErroApi && e.status === 422) throw new ErroApi(422, LINK_INVALIDO);
+    throw e;
   }
 }
 

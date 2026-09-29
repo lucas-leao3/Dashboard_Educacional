@@ -3,9 +3,36 @@ import type { ConsultaEstruturada } from '../data/tipos';
 import { rotaDoDashboard } from './catalogoDashboards';
 import { adicionar, alternarFavorito, carregarHistorico, LIMITE_HISTORICO, ordenarParaExibir, salvarHistorico } from './historico';
 import type { ItemHistorico } from './historico';
-import { codificarConsulta, decodificarConsulta, linkDeCompartilhamento } from './compartilhar';
+import { codificarConsulta, decodificarConsulta, executarDoLink, LINK_INVALIDO, linkDeCompartilhamento } from './compartilhar';
 import { paraCsv } from './csv';
-import { corDaSerie, pivotar } from './graficoDinamico';
+import { corDaSerie, pivotar, preenchimento } from './graficoDinamico';
+import { ErroApi } from '../data/api';
+import type { RespostaAssistente } from '../data/tipos';
+
+describe('revisão final', () => {
+  test('histórico ignora itens que não são perguntas salvas', () => {
+    const valido = { id: 'a', pergunta: 'p', consulta: { tipo: 'agregado' }, forma: 'texto', quando: '', favorito: false, rota: null };
+    const bruto = JSON.stringify([null, 3, { id: 'b' }, valido]);
+    expect(carregarHistorico({ getItem: () => bruto, setItem: () => {} }).map((i) => i.id)).toEqual(['a']);
+  });
+  test('link que decodifica mas o backend recusa vira "Link de consulta inválido."', async () => {
+    const recusa = async (): Promise<RespostaAssistente> => { throw new ErroApi(422, '[{"loc": ["body"]}]'); };
+    await expect(executarDoLink(codificarConsulta({ tipo: 'x' } as never), recusa)).rejects.toMatchObject({ detail: LINK_INVALIDO });
+    await expect(executarDoLink('%%%', recusa)).rejects.toMatchObject({ detail: LINK_INVALIDO });
+    const fora = async (): Promise<RespostaAssistente> => { throw new ErroApi(503, 'Groq fora'); };
+    await expect(executarDoLink(codificarConsulta({ tipo: 'agregado' } as never), fora)).rejects.toMatchObject({ detail: 'Groq fora' });
+  });
+  test('csv mantém a matrícula como texto e neutraliza fórmula', () => {
+    const csv = paraCsv([{ id: 'matricula', rotulo: 'Matrícula' }, { id: 'nome', rotulo: 'Nome' }, { id: 'crg', rotulo: 'CRG' }],
+      [{ matricula: 202016040001, nome: '=HYPERLINK("x")', crg: -1.5 }]);
+    expect(csv).toBe('﻿Matrícula;Nome;CRG\r\n="202016040001";"\'=HYPERLINK(""x"")";-1,5');
+  });
+  test('ausência vai hachurada; o resto na cor dada', () => {
+    expect(preenchimento('Sem resposta', '#2563eb', 'h1')).toBe('url(#h1)');
+    expect(preenchimento('Sem polo informado', '#2563eb', 'h1')).toBe('url(#h1)');
+    expect(preenchimento('Cametá', '#2563eb', 'h1')).toBe('#2563eb');
+  });
+});
 
 const consulta: ConsultaEstruturada = {
   tipo: 'agregado', metrica: 'contagem_alunos', dimensoes: ['polo'],

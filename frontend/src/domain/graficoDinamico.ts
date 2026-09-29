@@ -28,6 +28,11 @@ export function ehAusente(valor: string): boolean {
   return valor.startsWith('Sem ');
 }
 
+/** Preenchimento de barra ou fatia: ausência vai hachurada (padrão SVG `idHachura`, como `.hachurado` nas telas); o resto na cor dada. */
+export function preenchimento(nome: string, cor: string, idHachura: string): string {
+  return ehAusente(nome) ? `url(#${idHachura})` : cor;
+}
+
 /** Cor de uma série: ausência em cinza; polo com a cor fixa dele; ordinal na rampa de um hue só; nominal na paleta categórica. */
 export function corDaSerie(nome: string, series: string[], dimensao: string | null, ordinal: boolean): string {
   if (ehAusente(nome)) return COR_SINALIZACAO.sem_dado.hex;

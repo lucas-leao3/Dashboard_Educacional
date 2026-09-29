@@ -29,11 +29,18 @@ function armazenamentoPadrao(): Armazenamento | undefined {
   }
 }
 
+/** Item salvo que a tela consegue exibir e repetir; o resto (armazenamento mexido à mão, versão antiga) é ignorado. */
+function ehItem(valor: unknown): valor is ItemHistorico {
+  const i = valor as Partial<ItemHistorico> | null;
+  return !!i && typeof i === 'object' && typeof i.id === 'string' && typeof i.pergunta === 'string'
+    && !!i.consulta && typeof i.consulta === 'object';
+}
+
 export function carregarHistorico(armazenamento: Armazenamento | undefined = armazenamentoPadrao()): ItemHistorico[] {
   try {
     const bruto = armazenamento?.getItem(CHAVE_HISTORICO);
     const lido: unknown = bruto ? JSON.parse(bruto) : [];
-    return Array.isArray(lido) ? (lido as ItemHistorico[]) : [];
+    return Array.isArray(lido) ? lido.filter(ehItem) : [];
   } catch {
     return [];
   }

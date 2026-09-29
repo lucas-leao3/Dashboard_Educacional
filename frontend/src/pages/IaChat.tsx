@@ -7,7 +7,7 @@ import RespostaView from '../components/assistente/RespostaView';
 import { ErroApi, executarConsulta, perguntarAssistente } from '../data/api';
 import type { RespostaAssistente } from '../data/tipos';
 import { rotaDoDashboard } from '../domain/catalogoDashboards';
-import { decodificarConsulta, linkDeCompartilhamento } from '../domain/compartilhar';
+import { decodificarConsulta, executarDoLink, linkDeCompartilhamento } from '../domain/compartilhar';
 import { adicionar, alternarFavorito, carregarHistorico, salvarHistorico } from '../domain/historico';
 import type { ItemHistorico } from '../domain/historico';
 import { useDados } from '../hooks/useDados';
@@ -54,12 +54,8 @@ export default function IaChat() {
   useEffect(() => {
     if (!codigo || origem !== 'api') return;
     setParams({}, { replace: true });
-    const consulta = decodificarConsulta(codigo);
-    if (!consulta) {
-      setErro('Link de consulta inválido.');
-      return;
-    }
-    void rodar(() => executarConsulta(consulta), consulta.interpretacao || 'Consulta compartilhada');
+    const texto = decodificarConsulta(codigo)?.interpretacao || 'Consulta compartilhada';
+    void rodar(() => executarDoLink(codigo, executarConsulta), texto);
   }, [codigo, origem, rodar, setParams]);
 
   const enviar = (e: FormEvent) => {

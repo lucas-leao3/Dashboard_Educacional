@@ -1,10 +1,11 @@
+import { useId } from 'react';
 import type { ReactElement } from 'react';
 import {
   Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
 import type { GraficoDinamico as Grafico } from '../../data/tipos';
-import { corDaSerie, pivotar } from '../../domain/graficoDinamico';
-import { COR_PRIMARIA } from '../../theme/cores';
+import { corDaSerie, pivotar, preenchimento } from '../../domain/graficoDinamico';
+import { COR_PRIMARIA, COR_SINALIZACAO } from '../../theme/cores';
 
 /** "Cametá n=2 · Oeiras n=1": o n fica sempre visível, somado por categoria do eixo. */
 function legendaN(g: Grafico): string {
@@ -14,18 +15,29 @@ function legendaN(g: Grafico): string {
 }
 
 export default function GraficoDinamico({ grafico: g }: { grafico: Grafico }) {
+  const idHachura = `hachura-${useId().replace(/[^a-zA-Z0-9-]/g, '')}`;
   const campo = g.tipo === 'barras_empilhadas' ? 'percentual' : 'valor';
   const { linhas, series } = pivotar(g.dados, g.eixo, g.serie, campo, g.series);
   const cor = (s: string) => (g.serie ? corDaSerie(s, series, g.serie, g.serie_ordinal) : COR_PRIMARIA);
   const nome = (s: string) => (g.serie ? s : g.rotulo_valor);
+  // "Sem resposta" hachurado em cinza, como `.hachurado` nas telas: não coletado, nunca um valor.
+  const hachura = (
+    <defs>
+      <pattern id={idHachura} width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+        <rect width="7" height="7" fill="#e2e8f0" />
+        <rect width="3" height="7" fill={COR_SINALIZACAO.sem_dado.hex} />
+      </pattern>
+    </defs>
+  );
 
   let grafico: ReactElement;
   if (g.tipo === 'rosca') {
     const fatias = g.dados.map((d) => String(d[g.eixo]));
     grafico = (
       <PieChart>
+        {hachura}
         <Pie data={g.dados} dataKey="valor" nameKey={g.eixo} innerRadius="55%" outerRadius="80%">
-          {fatias.map((f) => <Cell key={f} fill={corDaSerie(f, fatias, g.eixo, false)} />)}
+          {fatias.map((f) => <Cell key={f} fill={preenchimento(f, corDaSerie(f, fatias, g.eixo, false), idHachura)} />)}
         </Pie>
         <Tooltip /><Legend />
       </PieChart>
@@ -49,10 +61,18 @@ export default function GraficoDinamico({ grafico: g }: { grafico: Grafico }) {
     const empilhado = g.tipo === 'barras_empilhadas';
     grafico = (
       <BarChart data={linhas} layout="vertical">
+        {hachura}
         <CartesianGrid strokeDasharray="3 3" />
         <XAxis type="number" domain={empilhado ? [0, 100] : undefined} unit={empilhado ? '%' : undefined} />
         <YAxis type="category" dataKey={g.eixo} width={160} /><Tooltip />{g.serie && <Legend />}
-        {series.map((s) => <Bar key={s} dataKey={s} name={nome(s)} fill={cor(s)} stackId={empilhado ? 'total' : undefined} />)}
+        {g.serie ? (
+          series.map((s) => <Bar key={s} dataKey={s} name={nome(s)} fill={preenchimento(s, cor(s), idHachura)} stackId={empilhado ? 'total' : undefined} />)
+        ) : (
+          // Uma série só: a cor vai por barra, para a categoria de ausência sair hachurada.
+          <Bar dataKey="valor" name={g.rotulo_valor} fill={COR_PRIMARIA}>
+            {linhas.map((l) => <Cell key={String(l[g.eixo])} fill={preenchimento(String(l[g.eixo]), COR_PRIMARIA, idHachura)} />)}
+          </Bar>
+        )}
       </BarChart>
     );
   }
