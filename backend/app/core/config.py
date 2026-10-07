@@ -50,5 +50,5 @@ RAIZ_PROCESSADA = Path(os.getenv("DADOS_PROCESSED_DIR", _RAIZ_REPO / "data" / "p
 # Sem GROQ_API_KEY o app sobe normalmente: só POST /assistente/perguntar
 # responde 503. /assistente/executar não usa o LLM e segue funcionando.
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
-GROQ_MODELO = os.getenv("GROQ_MODELO", "llama-3.3-70b-versatile")
+GROQ_MODELO = os.getenv("GROQ_MODELO", "openai/gpt-oss-120b")
 GROQ_URL = os.getenv("GROQ_URL", "https://api.groq.com/openai/v1")
