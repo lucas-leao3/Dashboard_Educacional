@@ -195,6 +195,8 @@ local/
 
 # Data files (se houver dados sensíveis)
 data/
+# frontend/src/data/ é código (api, tipos, mockData), não dado
+!frontend/src/data/
 docs/
 fasitech/
 *.csv
